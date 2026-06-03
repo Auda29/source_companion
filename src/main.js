@@ -6,7 +6,8 @@
     recent: loadRecent(),
     tabs: [],
     activeTabId: null,
-    message: null
+    message: null,
+    repositoryStateLoader: resolveRepositoryStateLoader()
   };
 
   const dialogs = {
@@ -133,6 +134,7 @@
       state.activeTabId = existing.id;
       setMessage("success", `${existing.displayName} is already open.`);
       render();
+      refreshRepositoryState(existing.id, "reopen");
       return;
     }
 
@@ -148,6 +150,7 @@
     addRecent(tab);
     setMessage("success", `${name} opened in a repository tab.`);
     render();
+    refreshRepositoryState(tab.id, "opening");
   }
 
   function addRecent(repo) {
@@ -298,12 +301,32 @@
             <div class="meta-value">${escapeHtml(branchLabel(active.git.branch))}</div>
           </div>
           <div class="meta-item">
+            <div class="meta-label">Upstream</div>
+            <div class="meta-value">${escapeHtml(upstreamLabel(active.git.upstream))}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Divergence</div>
+            <div class="meta-value">${escapeHtml(divergenceLabel(active.git.divergence))}</div>
+          </div>
+          <div class="meta-item">
             <div class="meta-label">Remote</div>
             <div class="meta-value">${escapeHtml(remoteLabel(active.git.remote))}</div>
           </div>
           <div class="meta-item">
+            <div class="meta-label">GitHub</div>
+            <div class="meta-value">${escapeHtml(githubLabel(active.github))}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Changes</div>
+            <div class="meta-value">${escapeHtml(changesLabel(active.git))}</div>
+          </div>
+          <div class="meta-item">
             <div class="meta-label">Operation</div>
             <div class="meta-value">${escapeHtml(operationLabel(active.operations))}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Refresh</div>
+            <div class="meta-value">${escapeHtml(refreshLabel(active.lastRefresh))}</div>
           </div>
           <div class="meta-item">
             <div class="meta-label">Entry point</div>
@@ -354,11 +377,103 @@
       },
       error: null,
       lastRefresh: {
-        status: "idle",
-        requestedAt: null,
+        status: "scheduled",
+        requestedAt: openedAt,
         completedAt: null
       }
     };
+  }
+
+  async function refreshRepositoryState(tabId, reason) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.lastRefresh = {
+      status: "running",
+      requestedAt: new Date().toISOString(),
+      completedAt: null,
+      reason
+    };
+    render();
+
+    const loadRepositoryState = state.repositoryStateLoader;
+    if (!loadRepositoryState) {
+      applyRepositoryState(tabId, {
+        kind: tab.kind,
+        health: "error",
+        git: tab.git,
+        github: tab.github,
+        operations: tab.operations,
+        error: {
+          kind: "repository-state-unavailable",
+          message: "Repository state loader is not available in this runtime."
+        }
+      }, "failed");
+      return;
+    }
+
+    try {
+      const loaded = await loadRepositoryState({
+        repositoryPath: tab.path,
+        operations: tab.operations
+      });
+      applyRepositoryState(tabId, loaded, "idle");
+    } catch (error) {
+      applyRepositoryState(tabId, {
+        kind: tab.kind,
+        health: "error",
+        git: tab.git,
+        github: tab.github,
+        operations: tab.operations,
+        error: {
+          kind: "repository-state-error",
+          message: error && error.message ? error.message : "Repository state refresh failed."
+        }
+      }, "failed");
+    }
+  }
+
+  function applyRepositoryState(tabId, loaded, refreshStatus) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.kind = loaded.kind;
+    tab.health = loaded.health;
+    tab.git = normalizeGitState(loaded.git);
+    tab.github = loaded.github || null;
+    tab.operations = normalizeOperations(loaded.operations || tab.operations);
+    tab.error = loaded.error || null;
+    tab.lastRefresh = {
+      ...tab.lastRefresh,
+      status: refreshStatus,
+      completedAt: new Date().toISOString()
+    };
+
+    render();
+  }
+
+  function resolveRepositoryStateLoader() {
+    if (window.SourceCompanionRepositoryState && typeof window.SourceCompanionRepositoryState.loadRepositoryState === "function") {
+      return window.SourceCompanionRepositoryState.loadRepositoryState;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-state", "./src/repository-state"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.loadRepositoryState === "function") {
+          return loaded.loadRepositoryState;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
   }
 
   function createId() {
@@ -392,9 +507,44 @@
     return branch.detached ? `Detached at ${branch.headSha || "HEAD"}` : branch.name;
   }
 
+  function upstreamLabel(upstream) {
+    if (!upstream) return "None";
+    if (upstream.name) return upstream.name;
+    if (upstream.ref) return upstream.ref;
+    if (upstream.remoteName && upstream.branchName) return `${upstream.remoteName}/${upstream.branchName}`;
+    return "Configured";
+  }
+
+  function divergenceLabel(divergence) {
+    const counts = divergence || { ahead: 0, behind: 0 };
+    return `${Number(counts.ahead) || 0} ahead, ${Number(counts.behind) || 0} behind`;
+  }
+
   function remoteLabel(remote) {
     if (!remote) return "Unknown";
     return `${remote.name} (${remote.kind})`;
+  }
+
+  function githubLabel(github) {
+    if (!github) return "Not linked";
+    const repo = github.owner && github.name ? `${github.owner}/${github.name}` : "GitHub remote";
+    return github.authenticated ? `${repo} authenticated` : repo;
+  }
+
+  function changesLabel(git) {
+    const staged = countFiles(git.staged);
+    const unstaged = countFiles(git.unstaged);
+    const untracked = countFiles(git.untracked);
+    const conflicted = countFiles(git.conflicted);
+    return `${staged} staged, ${unstaged} unstaged, ${untracked} untracked, ${conflicted} conflicted`;
+  }
+
+  function refreshLabel(lastRefresh) {
+    if (!lastRefresh) return "Idle";
+    if (lastRefresh.status === "running") return "Running";
+    if (lastRefresh.status === "failed") return "Failed";
+    if (lastRefresh.completedAt) return `Updated at ${lastRefresh.completedAt}`;
+    return "Scheduled";
   }
 
   function operationLabel(operations) {
@@ -415,6 +565,38 @@
 
   function setMessage(kind, text) {
     state.message = { kind, text };
+  }
+
+  function normalizeGitState(git) {
+    const source = git || {};
+    const files = Array.isArray(source.files) ? source.files : [];
+
+    return {
+      branch: source.branch || null,
+      remote: source.remote || null,
+      remotes: Array.isArray(source.remotes) ? source.remotes : [],
+      upstream: source.upstream || null,
+      divergence: source.divergence || { ahead: 0, behind: 0 },
+      files,
+      staged: Array.isArray(source.staged) ? source.staged : files.filter((file) => file.staged),
+      unstaged: Array.isArray(source.unstaged) ? source.unstaged : files.filter((file) => file.unstaged),
+      untracked: Array.isArray(source.untracked) ? source.untracked : files.filter((file) => file.untracked),
+      conflicted: Array.isArray(source.conflicted) ? source.conflicted : files.filter((file) => file.conflicted)
+    };
+  }
+
+  function normalizeOperations(operations) {
+    const source = operations || {};
+    return {
+      running: Array.isArray(source.running) ? source.running : [],
+      queued: Array.isArray(source.queued) ? source.queued : [],
+      completed: Array.isArray(source.completed) ? source.completed : [],
+      lastCompleted: source.lastCompleted || null
+    };
+  }
+
+  function countFiles(files) {
+    return Array.isArray(files) ? files.length : 0;
   }
 
   function loadRecent() {

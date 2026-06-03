@@ -107,7 +107,7 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 - Abhaengigkeiten: `T6`, `T7`
 - Definition of Done: App erkennt kein Ordner offen, Ordner ohne Git, normales Git-Repo, Repo mit Remote, GitHub-Remote, GitHub-authentifiziert, Operation laeuft, Konflikt und Fehler; Branch, Upstream, ahead/behind, staged, unstaged, untracked und conflicted Dateien werden geladen.
 - Implementierungsnotiz: Zustaende explizit modellieren, nicht aus verstreuten UI-Flags ableiten.
-- Notiz: Review-Punkt adressiert: `tests/repository-state.test.js` erwartet fuer nicht-GitHub scp-style Remotes jetzt konsistent `ssh` und prueft, dass keine GitHub-Zuordnung gesetzt wird; fokussierter Node-Check mit Preserve-Symlink-Flags bestanden.
+- Notiz: Review-Punkt adressiert: `src/main.js` loest `loadRepositoryState` defensiv ueber Runtime-Bridge/CommonJS auf, laedt beim Oeffnen und erneuten Oeffnen eines Repository-Tabs echten Git-/GitHub-Zustand und rendert Branch, Upstream, ahead/behind, Remote, GitHub-Link, Change-Buckets, Fehler und Refresh-Status aus dem Repository-Kontext.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -118,8 +118,9 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 - Abhaengigkeiten: `T7`, `T8`
 - Definition of Done: Datei- und Git-Index-Aenderungen aktualisieren den Repository-Zustand automatisch; Events werden entprellt; Status wird nicht bei jedem Event blind neu geladen; Refresh-Konflikte mit laufenden Git-Operationen sind geregelt.
 - Implementierungsnotiz: Watcher soll Branch-Wechsel, Index-Aenderungen und normale Dateiaenderungen abdecken.
-- Review-Ergebnis: -
-- Offene Review-Punkte: -
+- Notiz: `src/repository-status-watcher.js` ergaenzt einen pro Repository startbaren Dateiwatcher mit Worktree- und `.git`-Metadaten-Zielen, Event-Klassifizierung, entprelltem Refresh via `loadRepositoryState`, Ignorieren irrelevanter Events und Verschieben von Refreshes waehrend laufender Git-Operationen; `tests/repository-status-watcher.test.js` prueft Debounce, Branch-/Index-Events, Busy-Deferral und verlinkte Gitdir-Pfade.
+- Review-Ergebnis: Zurueckgestellt am 2026-06-03. Der Watcher ist als Modul mit Debounce-, Git-Metadaten- und Busy-Deferral-Tests vorhanden; die fokussierten Node-Tests bestehen mit Preserve-Symlink-Flags. Blocking bleibt, dass der Watcher in der App nicht gestartet wird.
+- Offene Review-Punkte: `RepositoryStatusWatcher` wird ausserhalb der Tests nicht instanziiert und `src/main.js` verdrahtet keine `onState`-Aktualisierung pro Repository-Tab. Datei- oder Git-Index-Aenderungen koennen den sichtbaren Repository-Zustand der App deshalb noch nicht automatisch aktualisieren.
 
 ### T10 - Source-Control-Listen fuer Changes bauen
 
