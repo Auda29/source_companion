@@ -135,11 +135,12 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T11 - Datei-Diff-Ansicht implementieren
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T10`
 - Definition of Done: Ausgewaehlte Dateien zeigen einen lesbaren unified Diff; staged und unstaged Diffs sind unterscheidbar; Binary-, geloeschte, neue und umbenannte Dateien haben klare Ersatz- oder Fehlerzustaende; die Ansicht bietet keine Datei-Bearbeitung.
 - Implementierungsnotiz: Side-by-side Diff ist optional spaeter. Fuer das erste Review reicht ein robuster unified Diff.
+- Notiz: `src/repository-diff.js` laedt staged und unstaged Unified-Diffs ueber den Git Wrapper; `src/main.js` rendert die ausgewaehlte Datei mit Loading-, Fehler-, Binary-, Untracked- und Conflict-Ersatzstaenden sowie farbiger read-only Unified-Diff-Ansicht. `tests/repository-diff.test.js` deckt Routing, Ersatzstaende und einen echten Git-Diff-Lauf ab.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

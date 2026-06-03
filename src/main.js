@@ -8,6 +8,7 @@
     activeTabId: null,
     message: null,
     repositoryStateLoader: resolveRepositoryStateLoader(),
+    repositoryDiffLoader: resolveRepositoryDiffLoader(),
     repositoryStatusWatcher: null
   };
   state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
@@ -344,7 +345,7 @@
 
     workspaceContent.querySelectorAll("[data-change-key]").forEach((button) => {
       button.addEventListener("click", () => {
-        active.selectedChangeKey = button.dataset.changeKey;
+        selectChange(active.id, button.dataset.changeKey);
         render();
       });
     });
@@ -395,6 +396,7 @@
         completedAt: null
       },
       selectedChangeKey: null,
+      diffPreview: null,
       watchHandle: null
     };
   }
@@ -488,6 +490,9 @@
     tab.health = loaded.health;
     tab.git = normalizeGitState(loaded.git);
     tab.selectedChangeKey = normalizeSelectedChangeKey(tab, tab.selectedChangeKey);
+    if (tab.diffPreview && tab.diffPreview.key !== tab.selectedChangeKey) {
+      tab.diffPreview = null;
+    }
     tab.github = loaded.github || null;
     tab.operations = normalizeOperations(loaded.operations || tab.operations);
     tab.error = loaded.error || null;
@@ -497,6 +502,70 @@
       completedAt: new Date().toISOString()
     };
 
+    render();
+  }
+
+  function selectChange(tabId, changeKeyValue) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.selectedChangeKey = changeKeyValue;
+    tab.diffPreview = {
+      key: changeKeyValue,
+      status: "loading",
+      message: "Loading unified diff."
+    };
+
+    loadSelectedDiff(tabId, changeKeyValue);
+  }
+
+  async function loadSelectedDiff(tabId, changeKeyValue) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const selected = selectedChange(tab, changeBuckets(tab.git));
+    if (!selected || selected.key !== changeKeyValue) return;
+
+    const loadFileDiff = state.repositoryDiffLoader;
+    if (!loadFileDiff) {
+      applyDiffPreview(tabId, changeKeyValue, {
+        status: "error",
+        message: "Repository diff loader is not available in this runtime.",
+        diff: ""
+      });
+      return;
+    }
+
+    try {
+      const diff = await loadFileDiff({
+        repositoryPath: tab.path,
+        file: selected.file,
+        bucketId: selected.bucket.id
+      });
+      applyDiffPreview(tabId, changeKeyValue, diff);
+    } catch (error) {
+      applyDiffPreview(tabId, changeKeyValue, {
+        status: "error",
+        message: error && error.message ? error.message : "Diff loading failed.",
+        diff: ""
+      });
+    }
+  }
+
+  function applyDiffPreview(tabId, changeKeyValue, diff) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab || tab.selectedChangeKey !== changeKeyValue) return;
+
+    tab.diffPreview = {
+      key: changeKeyValue,
+      status: diff.status || "ready",
+      message: diff.message || "",
+      mode: diff.mode || null,
+      fileType: diff.fileType || null,
+      diff: diff.diff || "",
+      error: diff.error || null,
+      raw: diff.raw || ""
+    };
     render();
   }
 
@@ -562,6 +631,30 @@
           return new loaded.RepositoryStatusWatcher({
             loadState: loadState || undefined
           });
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryDiffLoader() {
+    if (window.SourceCompanionRepositoryDiff && typeof window.SourceCompanionRepositoryDiff.loadFileDiff === "function") {
+      return window.SourceCompanionRepositoryDiff.loadFileDiff;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-diff", "./src/repository-diff"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.loadFileDiff === "function") {
+          return loaded.loadFileDiff;
         }
       } catch {
         // Try the next runtime-specific path.
@@ -721,11 +814,54 @@
             <p>${escapeHtml(selected.bucket.detailLabel)} / ${escapeHtml(file.status || "--")} / ${escapeHtml(changeTypeLabel(file))}</p>
           </div>
         </div>
-        <div class="preview-state">
-          ${mode === "Conflict" ? "Conflict state selected for this file." : "Diff state selected for this file."}
-        </div>
+        ${renderDiffBody(selected)}
       </section>
     `;
+  }
+
+  function renderDiffBody(selected) {
+    const preview = selectedPreview(selected);
+    if (!preview) {
+      return '<div class="preview-state">Select this file again to load its diff.</div>';
+    }
+
+    if (preview.status === "loading") {
+      return `<div class="preview-state">${escapeHtml(preview.message || "Loading unified diff.")}</div>`;
+    }
+
+    if (preview.status !== "ready") {
+      return `
+        <div class="preview-state ${escapeHtml(preview.status)}">
+          ${escapeHtml(preview.message || "No unified diff is available.")}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="diff-meta">${escapeHtml(preview.message || "Unified diff.")}</div>
+      <pre class="diff-view" tabindex="0"><code>${renderUnifiedDiff(preview.diff)}</code></pre>
+    `;
+  }
+
+  function selectedPreview(selected) {
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+    if (!active || !active.diffPreview || active.diffPreview.key !== selected.key) return null;
+    return active.diffPreview;
+  }
+
+  function renderUnifiedDiff(diff) {
+    return String(diff || "").split(/\r?\n/).map((line) => {
+      const kind = diffLineClass(line);
+      return `<span class="${kind}">${escapeHtml(line) || " "}</span>`;
+    }).join("\n");
+  }
+
+  function diffLineClass(line) {
+    if (line.startsWith("+++ ") || line.startsWith("--- ")) return "diff-line meta";
+    if (line.startsWith("@@")) return "diff-line hunk";
+    if (line.startsWith("+")) return "diff-line added";
+    if (line.startsWith("-")) return "diff-line removed";
+    return "diff-line context";
   }
 
   function renderNoSelectedChange(buckets) {

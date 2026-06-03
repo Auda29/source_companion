@@ -449,6 +449,19 @@ input {
   color: var(--muted);
 }
 
+.preview-state.error,
+.preview-state.conflict {
+  border-color: #efb3b3;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.preview-state.binary,
+.preview-state.untracked,
+.preview-state.empty {
+  background: var(--surface-alt);
+}
+
 .change-item {
   width: 100%;
   min-height: 44px;
@@ -546,6 +559,53 @@ input {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.diff-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diff-view {
+  max-height: 520px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: var(--text);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.diff-view code {
+  display: grid;
+  min-width: max-content;
+}
+
+.diff-line {
+  min-height: 18px;
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.diff-line.meta {
+  color: var(--muted);
+  background: var(--surface-alt);
+}
+
+.diff-line.hunk {
+  color: var(--accent-strong);
+  background: #e4f0f0;
+}
+
+.diff-line.added {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.diff-line.removed {
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 
 .empty-list {
