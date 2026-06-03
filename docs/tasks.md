@@ -58,42 +58,45 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T4 - App-Shell und Projektauswahl bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T3`
 - Definition of Done: Startoberflaeche zeigt dauerhaft gespeicherte zuletzt geoeffnete Repositories sowie Aktionen fuer Repo oeffnen, Clone Repo, Clone from GitHub und Publish to GitHub; ausgewaehlte Repositories werden in Tabs geoeffnet; leere und fehlerhafte Startzustaende sind sichtbar.
 - Implementierungsnotiz: Projektauswahl klein halten. Sie ist Einstieg in Git-Kontexte, kein Dashboard und keine Projektverwaltung. Zuletzt geoeffnete Repositories im lokalen State Store speichern und ungueltige Pfade verstaendlich behandeln.
 - Notiz: Statische App-Shell in `index.html`, `src/styles.css` und `src/main.js` angelegt: Recent Repositories werden in localStorage persistiert, Open/Clone/GitHub-Clone/Publish-Einstiege validieren Eingaben, ausgewaehlte Repositories oeffnen als Tabs, leere und fehlerhafte Startzustaende sind sichtbar.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. App-Shell, Recent-Repositories-Persistenz, Open/Clone/GitHub-Clone/Publish-Einstiege, Tab-Oeffnung sowie leere und fehlerhafte Startzustaende sind im statischen UI umgesetzt.
 - Offene Review-Punkte: -
 
 ### T5 - Repo-Tabs mit isolierten Kontexten umsetzen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T3`, `T4`
 - Definition of Done: Mehrere Repositories koennen parallel in Tabs geoeffnet werden; Tab-Wechsel zeigt den richtigen Repository-Zustand; laufende Operationen und Fehler bleiben je Repository isoliert; Schliessen eines Tabs entfernt nur dessen Kontext.
 - Implementierungsnotiz: Keine globalen Singletons fuer aktives Repo verwenden, wenn sie Tab-Isolation verhindern.
-- Review-Ergebnis: -
+- Notiz: `src/main.js` nutzt jetzt pro Tab ein explizites RepositoryContext-Objekt mit eigener Git-, GitHub-, Operation-, Fehler- und Refresh-Struktur; Tab-Wechsel, erneutes Oeffnen und Schliessen arbeiten auf dieser Kontext-ID, und die Workspace-Ansicht rendert den aktiven Kontext inklusive isolierter Operation-/Fehlerfelder.
+- Review-Ergebnis: Bestanden am 2026-06-03. Mehrere Tabs werden ueber eigene RepositoryContext-Objekte verwaltet; aktiver Zustand, laufende/queued Operationen, Fehlerfelder und Schliessen bleiben auf die jeweilige Kontext-ID begrenzt.
 - Offene Review-Punkte: -
 
 ### T6 - Git CLI Wrapper Basisschicht implementieren
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T2`
 - Definition of Done: Git-Kommandos laufen ueber einen whitelisted Wrapper; stdout, stderr, Exit-Code und strukturierte Fehler werden getrennt erfasst; Argumente werden strukturiert uebergeben; freie Shell-Kommandos sind fuer die UI nicht verfuegbar.
 - Implementierungsnotiz: Wrapper mindestens fuer `status`, `diff`, `add`, `restore`, `commit`, `branch`, `switch`, `fetch`, `pull`, `push`, `remote`, `clone`, `init`, `log` und `stash` vorbereiten.
-- Review-Ergebnis: -
+- Notiz: `src/git-cli-wrapper.js` kapselt Git-Ausfuehrung ueber eine Whitelist und strukturierte Options-Builder fuer die geforderten Basisaktionen; stdout, stderr, Exit-Code und normalisierte Fehler werden getrennt geliefert, Force Push wird am Wrapper abgewiesen, und `tests/git-cli-wrapper.test.js` prueft Whitelist, Argumentbau, Ablehnungen und einen Git-Init/Status-Lauf.
+- Review-Ergebnis: Bestanden am 2026-06-03. Whitelist, strukturierte Argumentbildung, getrennte Ergebnisfelder, normalisierte Fehler, Force-Push-Ablehnung und Git-Init/Status-Lauf sind per Code-Review und fokussiertem Node-Check abgedeckt.
 - Offene Review-Punkte: -
 
 ### T7 - Git Operation Queue pro Repository implementieren
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T3`, `T6`
 - Definition of Done: Git-Operationen werden pro Repository kontrolliert serialisiert; parallele Operationen in verschiedenen Repositories bleiben moeglich; laufende, erfolgreiche, fehlgeschlagene und abgebrochene Operationen sind im State unterscheidbar.
 - Implementierungsnotiz: Lange Operationen sollen abbrechbar vorbereitet werden. Queue darf Status-Refreshes nicht dauerhaft verhungern lassen.
+- Notiz: `src/git-operation-queue.js` fuehrt eine per-Repository serialisierte Queue mit paralleler Ausfuehrung verschiedener Repositories, AbortController-Unterstuetzung, Snapshots fuer queued/running/completed/lastCompleted und Refresh-Priorisierung ein; `src/main.js` nutzt kompatible Operation-Statusfelder fuer vorbereitete Clone/Init-Einstiege.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

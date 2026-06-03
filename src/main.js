@@ -66,7 +66,7 @@
     }
 
     if (flow === "clone") {
-      return prepareClone(formData.get("url"), formData.get("target"), "Clone setup");
+      return prepareClone(formData.get("url"), formData.get("target"), "Clone setup", "clone");
     }
 
     if (flow === "github") {
@@ -80,7 +80,7 @@
 
       const repoName = name.split("/").pop();
       const path = joinPath(target, repoName);
-      openPreparedRepository(path, repoName, "GitHub clone setup");
+      openPreparedRepository(path, repoName, "GitHub clone setup", { initialOperationKind: "clone" });
       return true;
     }
 
@@ -94,7 +94,7 @@
         return false;
       }
 
-      openPreparedRepository(path, name, `Publish setup: ${visibility}`);
+      openPreparedRepository(path, name, `Publish setup: ${visibility}`, { initialOperationKind: "init" });
       return true;
     }
 
@@ -113,7 +113,7 @@
     return true;
   }
 
-  function prepareClone(urlValue, targetValue, status) {
+  function prepareClone(urlValue, targetValue, status, operationKind) {
     const url = clean(urlValue);
     const target = clean(targetValue);
     if (!isCloneUrl(url) || !isAbsolutePath(target)) {
@@ -123,26 +123,25 @@
     }
 
     const repoName = repoNameFromUrl(url);
-    openPreparedRepository(joinPath(target, repoName), repoName, status);
+    openPreparedRepository(joinPath(target, repoName), repoName, status, { initialOperationKind: operationKind });
     return true;
   }
 
-  function openPreparedRepository(path, name, status) {
+  function openPreparedRepository(path, name, status, options = {}) {
     const existing = state.tabs.find((tab) => samePath(tab.path, path));
     if (existing) {
       state.activeTabId = existing.id;
-      setMessage("success", `${existing.name} is already open.`);
+      setMessage("success", `${existing.displayName} is already open.`);
       render();
       return;
     }
 
-    const tab = {
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      name,
+    const tab = createRepositoryContext({
+      displayName: name,
       path,
-      status,
-      openedAt: new Date().toISOString()
-    };
+      entryStatus: status,
+      initialOperationKind: options.initialOperationKind
+    });
 
     state.tabs.push(tab);
     state.activeTabId = tab.id;
@@ -154,7 +153,7 @@
   function addRecent(repo) {
     state.recent = [
       {
-        name: repo.name,
+        name: repo.displayName,
         path: repo.path,
         lastOpenedAt: repo.openedAt
       },
@@ -226,10 +225,10 @@
       tabNode.className = `tab${tab.id === state.activeTabId ? " active" : ""}`;
       tabNode.innerHTML = `
         <button class="tab-main" type="button">
-          <span class="tab-label">${escapeHtml(tab.name)}</span>
+          <span class="tab-label">${escapeHtml(tab.displayName)}</span>
         </button>
-        <span class="status-pill ready">${escapeHtml(tab.status)}</span>
-        <button class="tab-close" type="button" aria-label="Close ${escapeHtml(tab.name)}">x</button>
+        <span class="status-pill ${healthClass(tab)}">${escapeHtml(repositoryHealthLabel(tab))}</span>
+        <button class="tab-close" type="button" aria-label="Close ${escapeHtml(tab.displayName)}">x</button>
       `;
 
       tabNode.querySelector(".tab-main").addEventListener("click", () => {
@@ -278,31 +277,137 @@
       <article class="repo-summary">
         <header>
           <div>
-            <h2 class="repo-name">${escapeHtml(active.name)}</h2>
+            <h2 class="repo-name">${escapeHtml(active.displayName)}</h2>
             <p class="repo-path">${escapeHtml(active.path)}</p>
           </div>
-          <span class="status-pill ready">${escapeHtml(active.status)}</span>
+          <span class="status-pill ${healthClass(active)}">${escapeHtml(repositoryHealthLabel(active))}</span>
         </header>
+        ${active.error ? `
+          <div class="context-error">
+            <strong>${escapeHtml(active.error.kind)}</strong>
+            <span>${escapeHtml(active.error.message)}</span>
+          </div>
+        ` : ""}
         <div class="repo-meta">
           <div class="meta-item">
             <div class="meta-label">Repository state</div>
-            <div class="meta-value">Not loaded</div>
+            <div class="meta-value">${escapeHtml(repositoryKindLabel(active.kind))}</div>
           </div>
           <div class="meta-item">
             <div class="meta-label">Branch</div>
-            <div class="meta-value">Unknown</div>
+            <div class="meta-value">${escapeHtml(branchLabel(active.git.branch))}</div>
           </div>
           <div class="meta-item">
             <div class="meta-label">Remote</div>
-            <div class="meta-value">Unknown</div>
+            <div class="meta-value">${escapeHtml(remoteLabel(active.git.remote))}</div>
           </div>
           <div class="meta-item">
             <div class="meta-label">Operation</div>
-            <div class="meta-value">Idle</div>
+            <div class="meta-value">${escapeHtml(operationLabel(active.operations))}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Entry point</div>
+            <div class="meta-value">${escapeHtml(active.entryStatus)}</div>
           </div>
         </div>
       </article>
     `;
+  }
+
+  function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
+    const id = createId();
+    const openedAt = new Date().toISOString();
+    const queuedOperation = initialOperationKind ? {
+      id: `${id}:${initialOperationKind}:queued`,
+      repositoryId: id,
+      kind: initialOperationKind,
+      action: initialOperationKind,
+      priority: "normal",
+      status: "queued",
+      queuedAt: openedAt,
+      startedAt: null,
+      completedAt: null,
+      abortable: true
+    } : null;
+
+    return {
+      id,
+      displayName,
+      path,
+      kind: "git-repository",
+      health: queuedOperation ? "operation-running" : "ready",
+      entryStatus,
+      openedAt,
+      git: {
+        branch: null,
+        remote: null,
+        upstream: null,
+        divergence: { ahead: 0, behind: 0 },
+        files: []
+      },
+      github: null,
+      operations: {
+        running: [],
+        queued: queuedOperation ? [queuedOperation] : [],
+        completed: [],
+        lastCompleted: null
+      },
+      error: null,
+      lastRefresh: {
+        status: "idle",
+        requestedAt: null,
+        completedAt: null
+      }
+    };
+  }
+
+  function createId() {
+    return crypto.randomUUID ? crypto.randomUUID() : `repo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function repositoryHealthLabel(repo) {
+    if (repo.health === "operation-running") return "Operation";
+    if (repo.health === "conflict") return "Conflict";
+    if (repo.health === "error") return "Error";
+    return "Ready";
+  }
+
+  function healthClass(repo) {
+    if (repo.health === "operation-running") return "warning";
+    if (repo.health === "conflict" || repo.health === "error") return "error";
+    return "ready";
+  }
+
+  function repositoryKindLabel(kind) {
+    if (kind === "folder-without-git") return "Folder without Git";
+    if (kind === "no-folder") return "No folder";
+    return "Git repository";
+  }
+
+  function branchLabel(branch) {
+    if (!branch) return "Unknown";
+    return branch.detached ? `Detached at ${branch.headSha || "HEAD"}` : branch.name;
+  }
+
+  function remoteLabel(remote) {
+    if (!remote) return "Unknown";
+    return `${remote.name} (${remote.kind})`;
+  }
+
+  function operationLabel(operations) {
+    if (operations.running.length > 0) {
+      return operations.running.map((operation) => `${operation.kind} ${operation.status || "running"}`).join(", ");
+    }
+
+    if (operations.queued.length > 0) {
+      return operations.queued.map((operation) => `${operation.kind} ${operation.status || "queued"}`).join(", ");
+    }
+
+    if (operations.lastCompleted) {
+      return `${operations.lastCompleted.status} at ${operations.lastCompleted.completedAt}`;
+    }
+
+    return "Idle";
   }
 
   function setMessage(kind, text) {
