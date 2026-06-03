@@ -124,24 +124,24 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T10 - Source-Control-Listen fuer Changes bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T8`
 - Definition of Done: UI zeigt Changed, Staged, Untracked und Conflicts getrennt; jede Datei zeigt Pfad, Statussymbol und Aenderungstyp; Auswahl einer Datei oeffnet den passenden Diff- oder Konfliktzustand.
 - Implementierungsnotiz: Keine Projektbaum-Navigation bauen. Nur geaenderte Dateien und Git-Kontext anzeigen.
 - Notiz: `src/main.js` rendert jetzt pro Repository-Kontext getrennte Source-Control-Listen fuer Changed, Staged, Untracked und Conflicts; Eintraege zeigen Pfad, Statussymbol und Aenderungstyp, und die Auswahl oeffnet pro Tab einen Diff- oder Konfliktzustand. `src/styles.css` ergaenzt die kompakte Listen-/Detailansicht ohne Projektbaum.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. `src/main.js` rendert Changed, Staged, Untracked und Conflicts getrennt aus dem Repository-Kontext; Dateieintraege zeigen Pfad, Statussymbol und Aenderungstyp, und die Auswahl fuehrt je nach Bucket in Diff- oder Konfliktzustand. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T11 - Datei-Diff-Ansicht implementieren
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T10`
 - Definition of Done: Ausgewaehlte Dateien zeigen einen lesbaren unified Diff; staged und unstaged Diffs sind unterscheidbar; Binary-, geloeschte, neue und umbenannte Dateien haben klare Ersatz- oder Fehlerzustaende; die Ansicht bietet keine Datei-Bearbeitung.
 - Implementierungsnotiz: Side-by-side Diff ist optional spaeter. Fuer das erste Review reicht ein robuster unified Diff.
 - Notiz: `src/repository-diff.js` laedt staged und unstaged Unified-Diffs ueber den Git Wrapper; `src/main.js` rendert die ausgewaehlte Datei mit Loading-, Fehler-, Binary-, Untracked- und Conflict-Ersatzstaenden sowie farbiger read-only Unified-Diff-Ansicht. `tests/repository-diff.test.js` deckt Routing, Ersatzstaende und einen echten Git-Diff-Lauf ab.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. `src/repository-diff.js` laedt staged und unstaged Unified-Diffs unterscheidbar ueber den Git Wrapper und liefert klare Ersatz-/Fehlerzustaende fuer untracked, conflict, binary und leere Diff-Faelle; `src/main.js` rendert die read-only Diff-Ansicht mit Loading- und Fehlerzustaenden. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; der Browser-Smoke-Check war durch die lokale Browser-URL-Policy fuer `file://` blockiert.
 - Offene Review-Punkte: -
 
 ### T12 - Datei-Staging, Unstaging und Discard umsetzen
