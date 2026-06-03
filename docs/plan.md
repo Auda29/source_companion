@@ -210,11 +210,13 @@ Nicht enthalten:
 Commit-Bereich:
 - Commit-Message-Feld
 - Commit-Button
+- Committen und pushen als direkter kombinierter Flow
 - Dropdown für Commit-Varianten
 
 Funktionen:
 - Commit
 - Commit staged changes
+- Commit and Push
 - Amend Commit
 - Optional: sign-off, falls später sinnvoll
 
@@ -226,7 +228,8 @@ Regeln:
 
 AI Commit Message:
 - kritisch und optional
-- nur als externer Codex-Aufruf oder Übergabe denkbar
+- Codex-UI als Referenz: leere Commit Message kann einen Vorschlag generieren
+- nur als expliziter Generierungsflow denkbar
 - kein eingebauter Chat
 - kein autonomer Agent
 
@@ -383,6 +386,7 @@ Die Toolbar darf kompakt wie Cursor/VS Code sein.
 Elemente:
 - Commit-Message-Eingabe
 - Commit-Button
+- Committen-und-Pushen-Aktion
 - Dropdown für Commit-Varianten
 - Statushinweise
 
@@ -390,6 +394,8 @@ Verhalten:
 - Button deaktiviert, wenn Commit nicht möglich ist.
 - Fehlermeldungen nahe am Commit-Bereich.
 - Amend visuell klar vom normalen Commit unterscheiden.
+- Codex-Commit-UI ist eine relevante Referenz: Commit Message kann leer bleiben, wenn dadurch explizit eine Message generiert wird.
+- Kombinierter Flow `Committen und pushen` ist sinnvoll, solange Commit und Push weiterhin als nachvollziehbare Git-Aktionen sichtbar bleiben.
 
 ### 7.4 Diff-Fläche
 
@@ -564,6 +570,7 @@ Muss enthalten:
 - Datei discard mit Warnung
 - Commit Message
 - Commit
+- Commit and Push
 - Amend Commit
 - Branch anzeigen
 - Branch erstellen/löschen
@@ -601,6 +608,7 @@ Muss enthalten:
 - Warnung bei Amend
 - Commit-Button erst aktiv, wenn Commit möglich ist
 - verständliche Fehleranzeige, wenn Git einen Commit ablehnt
+- spaeter optional: leere Commit Message als Signal, um eine Commit Message zu generieren
 
 Ziel:
 - Nutzer kann kleine, saubere Commits bauen, ohne einen Editor oder ein Terminal öffnen zu müssen.
@@ -823,7 +831,8 @@ Entscheidung:
 AI Commit Message ist potenziell wichtig, aber gefährlich für den Scope.
 
 Erlaubbare Richtung:
-- expliziter Button zum Vorschlagen einer Commit Message
+- leeres Commit-Message-Feld kann eine Commit Message generieren, aehnlich Codex
+- alternativ oder ergaenzend: expliziter Button zum Vorschlagen einer Commit Message
 - Vorschlag basiert nur auf staged diff
 - Nutzer muss Message prüfen und selbst committen
 - kein autonomer Commit
@@ -832,6 +841,7 @@ Erlaubbare Richtung:
 
 Noch zu klären:
 - lokal eingebaut oder externer Codex-Aufruf
+- ob leeres Feld direkt generiert oder vorher eine kurze Bestaetigung zeigt
 - nur staged diff oder auch unstaged context
 - Datenschutz/Prompt-Anzeige
 - Kosten/Rate-Limits
