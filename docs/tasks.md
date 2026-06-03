@@ -102,33 +102,34 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T8 - Repository-Erkennung und Git-Zustandsmodell umsetzen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T7`
 - Definition of Done: App erkennt kein Ordner offen, Ordner ohne Git, normales Git-Repo, Repo mit Remote, GitHub-Remote, GitHub-authentifiziert, Operation laeuft, Konflikt und Fehler; Branch, Upstream, ahead/behind, staged, unstaged, untracked und conflicted Dateien werden geladen.
 - Implementierungsnotiz: Zustaende explizit modellieren, nicht aus verstreuten UI-Flags ableiten.
 - Notiz: Review-Punkt adressiert: `src/main.js` loest `loadRepositoryState` defensiv ueber Runtime-Bridge/CommonJS auf, laedt beim Oeffnen und erneuten Oeffnen eines Repository-Tabs echten Git-/GitHub-Zustand und rendert Branch, Upstream, ahead/behind, Remote, GitHub-Link, Change-Buckets, Fehler und Refresh-Status aus dem Repository-Kontext.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. `loadRepositoryState` modelliert die geforderten Repository-Zustaende inklusive Branch, Upstream, ahead/behind, Remote/GitHub-Zuordnung, Operation-laeuft, Konflikt und Change-Buckets; `src/main.js` laedt diese Daten pro Tab ueber Runtime-Bridge/CommonJS und rendert die Metadaten aus dem Repository-Kontext. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T9 - Dateiwatcher und entprellten Status-Refresh bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T7`, `T8`
 - Definition of Done: Datei- und Git-Index-Aenderungen aktualisieren den Repository-Zustand automatisch; Events werden entprellt; Status wird nicht bei jedem Event blind neu geladen; Refresh-Konflikte mit laufenden Git-Operationen sind geregelt.
 - Implementierungsnotiz: Watcher soll Branch-Wechsel, Index-Aenderungen und normale Dateiaenderungen abdecken.
-- Notiz: `src/repository-status-watcher.js` ergaenzt einen pro Repository startbaren Dateiwatcher mit Worktree- und `.git`-Metadaten-Zielen, Event-Klassifizierung, entprelltem Refresh via `loadRepositoryState`, Ignorieren irrelevanter Events und Verschieben von Refreshes waehrend laufender Git-Operationen; `tests/repository-status-watcher.test.js` prueft Debounce, Branch-/Index-Events, Busy-Deferral und verlinkte Gitdir-Pfade.
-- Review-Ergebnis: Zurueckgestellt am 2026-06-03. Der Watcher ist als Modul mit Debounce-, Git-Metadaten- und Busy-Deferral-Tests vorhanden; die fokussierten Node-Tests bestehen mit Preserve-Symlink-Flags. Blocking bleibt, dass der Watcher in der App nicht gestartet wird.
-- Offene Review-Punkte: `RepositoryStatusWatcher` wird ausserhalb der Tests nicht instanziiert und `src/main.js` verdrahtet keine `onState`-Aktualisierung pro Repository-Tab. Datei- oder Git-Index-Aenderungen koennen den sichtbaren Repository-Zustand der App deshalb noch nicht automatisch aktualisieren.
+- Notiz: Review-Punkt adressiert: `src/main.js` instanziiert `RepositoryStatusWatcher` jetzt defensiv per Runtime-Bridge/CommonJS, startet pro Repository-Tab einen Watch-Handle, verdrahtet `onState` auf den isolierten Tab-Kontext und schliesst den Watcher beim Tab-Schliessen; bestehende Watcher- und State-Tests bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-03. `RepositoryStatusWatcher` ist jetzt in `src/main.js` pro Repository-Tab instanziiert, aktualisiert den isolierten Tab-Kontext ueber `onState`, wird beim Tab-Schliessen beendet und deckt Worktree-, Branch- und Index-Events mit Debounce sowie Busy-Deferral ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; die Browser-Gegenprobe war durch lokale Browser-Policy blockiert.
+- Offene Review-Punkte: -
 
 ### T10 - Source-Control-Listen fuer Changes bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T8`
 - Definition of Done: UI zeigt Changed, Staged, Untracked und Conflicts getrennt; jede Datei zeigt Pfad, Statussymbol und Aenderungstyp; Auswahl einer Datei oeffnet den passenden Diff- oder Konfliktzustand.
 - Implementierungsnotiz: Keine Projektbaum-Navigation bauen. Nur geaenderte Dateien und Git-Kontext anzeigen.
+- Notiz: `src/main.js` rendert jetzt pro Repository-Kontext getrennte Source-Control-Listen fuer Changed, Staged, Untracked und Conflicts; Eintraege zeigen Pfad, Statussymbol und Aenderungstyp, und die Auswahl oeffnet pro Tab einen Diff- oder Konfliktzustand. `src/styles.css` ergaenzt die kompakte Listen-/Detailansicht ohne Projektbaum.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

@@ -7,8 +7,10 @@
     tabs: [],
     activeTabId: null,
     message: null,
-    repositoryStateLoader: resolveRepositoryStateLoader()
+    repositoryStateLoader: resolveRepositoryStateLoader(),
+    repositoryStatusWatcher: null
   };
+  state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
 
   const dialogs = {
     open: document.getElementById("openDialog"),
@@ -134,6 +136,7 @@
       state.activeTabId = existing.id;
       setMessage("success", `${existing.displayName} is already open.`);
       render();
+      startRepositoryWatch(existing);
       refreshRepositoryState(existing.id, "reopen");
       return;
     }
@@ -150,6 +153,7 @@
     addRecent(tab);
     setMessage("success", `${name} opened in a repository tab.`);
     render();
+    startRepositoryWatch(tab);
     refreshRepositoryState(tab.id, "opening");
   }
 
@@ -169,7 +173,8 @@
     const index = state.tabs.findIndex((tab) => tab.id === tabId);
     if (index === -1) return;
 
-    state.tabs.splice(index, 1);
+    const [closedTab] = state.tabs.splice(index, 1);
+    stopRepositoryWatch(closedTab);
     if (state.activeTabId === tabId) {
       const fallback = state.tabs[index] || state.tabs[index - 1] || null;
       state.activeTabId = fallback ? fallback.id : null;
@@ -334,7 +339,15 @@
           </div>
         </div>
       </article>
+      ${renderSourceControl(active)}
     `;
+
+    workspaceContent.querySelectorAll("[data-change-key]").forEach((button) => {
+      button.addEventListener("click", () => {
+        active.selectedChangeKey = button.dataset.changeKey;
+        render();
+      });
+    });
   }
 
   function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
@@ -380,8 +393,42 @@
         status: "scheduled",
         requestedAt: openedAt,
         completedAt: null
-      }
+      },
+      selectedChangeKey: null,
+      watchHandle: null
     };
+  }
+
+  function startRepositoryWatch(tab) {
+    if (!tab || tab.watchHandle || !state.repositoryStatusWatcher) return;
+
+    try {
+      tab.watchHandle = state.repositoryStatusWatcher.watchRepository({
+        repositoryId: tab.id,
+        repositoryPath: tab.path,
+        operationsProvider: () => {
+          const current = state.tabs.find((item) => item.id === tab.id);
+          return current ? current.operations : tab.operations;
+        },
+        onState: (loaded) => {
+          applyRepositoryState(tab.id, loaded, "idle");
+        },
+        onError: (error) => {
+          applyRepositoryWatchError(tab.id, error);
+        }
+      });
+    } catch (error) {
+      applyRepositoryWatchError(tab.id, {
+        kind: "repository-watch-error",
+        message: error && error.message ? error.message : "Repository watcher could not start."
+      });
+    }
+  }
+
+  function stopRepositoryWatch(tab) {
+    if (!tab || !tab.watchHandle) return;
+    tab.watchHandle.close();
+    tab.watchHandle = null;
   }
 
   async function refreshRepositoryState(tabId, reason) {
@@ -440,12 +487,31 @@
     tab.kind = loaded.kind;
     tab.health = loaded.health;
     tab.git = normalizeGitState(loaded.git);
+    tab.selectedChangeKey = normalizeSelectedChangeKey(tab, tab.selectedChangeKey);
     tab.github = loaded.github || null;
     tab.operations = normalizeOperations(loaded.operations || tab.operations);
     tab.error = loaded.error || null;
     tab.lastRefresh = {
       ...tab.lastRefresh,
       status: refreshStatus,
+      completedAt: new Date().toISOString()
+    };
+
+    render();
+  }
+
+  function applyRepositoryWatchError(tabId, error) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.error = {
+      kind: error && error.kind ? error.kind : "repository-watch-error",
+      message: error && error.message ? error.message : "Repository watcher reported an error.",
+      raw: error && error.raw ? error.raw : null
+    };
+    tab.lastRefresh = {
+      ...tab.lastRefresh,
+      status: "failed",
       completedAt: new Date().toISOString()
     };
 
@@ -467,6 +533,35 @@
         const loaded = require(candidate);
         if (loaded && typeof loaded.loadRepositoryState === "function") {
           return loaded.loadRepositoryState;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryStatusWatcher(loadState) {
+    if (window.SourceCompanionRepositoryStatusWatcher &&
+      typeof window.SourceCompanionRepositoryStatusWatcher.RepositoryStatusWatcher === "function") {
+      return new window.SourceCompanionRepositoryStatusWatcher.RepositoryStatusWatcher({
+        loadState: loadState || undefined
+      });
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-status-watcher", "./src/repository-status-watcher"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.RepositoryStatusWatcher === "function") {
+          return new loaded.RepositoryStatusWatcher({
+            loadState: loadState || undefined
+          });
         }
       } catch {
         // Try the next runtime-specific path.
@@ -561,6 +656,138 @@
     }
 
     return "Idle";
+  }
+
+  function renderSourceControl(repo) {
+    const buckets = changeBuckets(repo.git);
+    const selected = selectedChange(repo, buckets);
+
+    return `
+      <section class="source-control" aria-label="Source control changes">
+        <div class="change-lists">
+          ${buckets.map((bucket) => renderChangeBucket(bucket, repo.selectedChangeKey)).join("")}
+        </div>
+        <div class="change-detail" aria-live="polite">
+          ${selected ? renderChangeDetail(selected) : renderNoSelectedChange(buckets)}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderChangeBucket(bucket, selectedKey) {
+    const count = bucket.files.length;
+    return `
+      <section class="change-bucket">
+        <h3>
+          <span>${escapeHtml(bucket.title)}</span>
+          <span class="bucket-count">${count}</span>
+        </h3>
+        ${count === 0 ? '<div class="change-empty">No files</div>' : `
+          <div class="change-list">
+            ${bucket.files.map((file, index) => renderChangeItem(bucket, file, index, selectedKey)).join("")}
+          </div>
+        `}
+      </section>
+    `;
+  }
+
+  function renderChangeItem(bucket, file, index, selectedKey) {
+    const key = changeKey(bucket.id, file, index);
+    const selected = key === selectedKey ? " selected" : "";
+    const path = file.oldPath ? `${file.oldPath} -> ${file.path}` : file.path;
+
+    return `
+      <button class="change-item${selected}" type="button" data-change-key="${escapeHtml(key)}">
+        <span class="change-status ${escapeHtml(bucket.id)}">${escapeHtml(statusSymbol(file, bucket.id))}</span>
+        <span class="change-text">
+          <span class="change-path">${escapeHtml(path)}</span>
+          <span class="change-kind">${escapeHtml(changeTypeLabel(file))}</span>
+        </span>
+      </button>
+    `;
+  }
+
+  function renderChangeDetail(selected) {
+    const file = selected.file;
+    const mode = selected.bucket.id === "conflicted" || file.conflicted ? "Conflict" : "Diff";
+    const path = file.oldPath ? `${file.oldPath} -> ${file.path}` : file.path;
+
+    return `
+      <section class="change-preview ${mode.toLowerCase()}">
+        <div class="preview-heading">
+          <span class="status-pill ${mode === "Conflict" ? "error" : "ready"}">${mode}</span>
+          <div>
+            <h3>${escapeHtml(path)}</h3>
+            <p>${escapeHtml(selected.bucket.detailLabel)} / ${escapeHtml(file.status || "--")} / ${escapeHtml(changeTypeLabel(file))}</p>
+          </div>
+        </div>
+        <div class="preview-state">
+          ${mode === "Conflict" ? "Conflict state selected for this file." : "Diff state selected for this file."}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderNoSelectedChange(buckets) {
+    const total = buckets.reduce((sum, bucket) => sum + bucket.files.length, 0);
+    return `
+      <section class="change-preview empty">
+        <h3>${total === 0 ? "No changes" : "No file selected"}</h3>
+        <div class="preview-state">${total === 0 ? "Working tree is clean." : "Select a file from a change list."}</div>
+      </section>
+    `;
+  }
+
+  function changeBuckets(git) {
+    return [
+      { id: "unstaged", title: "Changed", detailLabel: "Unstaged changes", files: Array.isArray(git.unstaged) ? git.unstaged : [] },
+      { id: "staged", title: "Staged", detailLabel: "Staged changes", files: Array.isArray(git.staged) ? git.staged : [] },
+      { id: "untracked", title: "Untracked", detailLabel: "Untracked file", files: Array.isArray(git.untracked) ? git.untracked : [] },
+      { id: "conflicted", title: "Conflicts", detailLabel: "Conflict", files: Array.isArray(git.conflicted) ? git.conflicted : [] }
+    ];
+  }
+
+  function selectedChange(repo, buckets) {
+    if (!repo.selectedChangeKey) return null;
+
+    for (const bucket of buckets) {
+      const found = bucket.files
+        .map((file, index) => ({ bucket, file, key: changeKey(bucket.id, file, index) }))
+        .find((item) => item.key === repo.selectedChangeKey);
+      if (found) return found;
+    }
+
+    return null;
+  }
+
+  function normalizeSelectedChangeKey(repo, selectedKey) {
+    if (!selectedKey) return null;
+    return selectedChange({ ...repo, selectedChangeKey: selectedKey }, changeBuckets(repo.git)) ? selectedKey : null;
+  }
+
+  function changeKey(bucketId, file, index) {
+    return `${bucketId}:${index}:${file.status || ""}:${file.oldPath || ""}:${file.path || ""}`;
+  }
+
+  function statusSymbol(file, bucketId) {
+    if (bucketId === "conflicted" || file.conflicted) return "!";
+    if (bucketId === "untracked" || file.untracked) return "?";
+    if (file.type === "added") return "A";
+    if (file.type === "deleted") return "D";
+    if (file.type === "renamed") return "R";
+    if (file.type === "modified") return "M";
+    return "C";
+  }
+
+  function changeTypeLabel(file) {
+    if (!file) return "changed";
+    if (file.type === "conflict") return "conflict";
+    if (file.type === "untracked") return "untracked";
+    if (file.type === "renamed") return "renamed";
+    if (file.type === "added") return "added";
+    if (file.type === "deleted") return "deleted";
+    if (file.type === "modified") return "modified";
+    return "changed";
   }
 
   function setMessage(kind, text) {
