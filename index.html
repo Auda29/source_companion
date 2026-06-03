@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Source Companion</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">SC</span>
+          <div>
+            <h1>Source Companion</h1>
+            <p>Git and GitHub source control</p>
+          </div>
+        </div>
+        <div class="top-actions" aria-label="Repository actions">
+          <button class="button primary" data-open-dialog="open">Open Repo</button>
+          <button class="button" data-open-dialog="clone">Clone Repo</button>
+          <button class="button" data-open-dialog="github">Clone from GitHub</button>
+          <button class="button" data-open-dialog="publish">Publish to GitHub</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="project-picker" aria-label="Project selection">
+          <div class="panel-heading">
+            <h2>Recent Repositories</h2>
+            <button class="icon-button" id="clearRecentButton" title="Clear recent repositories" aria-label="Clear recent repositories">x</button>
+          </div>
+          <div id="recentList" class="recent-list"></div>
+        </aside>
+
+        <section class="workspace" aria-label="Repository workspace">
+          <nav id="tabList" class="tabs" aria-label="Open repositories"></nav>
+          <div id="messageHost" class="message-host" aria-live="polite"></div>
+          <div id="workspaceContent" class="workspace-content"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="openDialog" class="dialog">
+      <form method="dialog" class="dialog-body" data-flow="open">
+        <header>
+          <h2>Open Repository</h2>
+          <button class="icon-button" value="cancel" title="Close" aria-label="Close">x</button>
+        </header>
+        <label>
+          Repository path
+          <input name="path" autocomplete="off" placeholder="C:\code\project">
+        </label>
+        <menu>
+          <button class="button" value="cancel">Cancel</button>
+          <button class="button primary" value="default">Open Repo</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="cloneDialog" class="dialog">
+      <form method="dialog" class="dialog-body" data-flow="clone">
+        <header>
+          <h2>Clone Repo</h2>
+          <button class="icon-button" value="cancel" title="Close" aria-label="Close">x</button>
+        </header>
+        <label>
+          Repository URL
+          <input name="url" autocomplete="off" placeholder="https://github.com/owner/repo.git">
+        </label>
+        <label>
+          Target folder
+          <input name="target" autocomplete="off" placeholder="C:\code">
+        </label>
+        <menu>
+          <button class="button" value="cancel">Cancel</button>
+          <button class="button primary" value="default">Prepare Clone</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="githubDialog" class="dialog">
+      <form method="dialog" class="dialog-body" data-flow="github">
+        <header>
+          <h2>Clone from GitHub</h2>
+          <button class="icon-button" value="cancel" title="Close" aria-label="Close">x</button>
+        </header>
+        <label>
+          Repository name
+          <input name="name" autocomplete="off" placeholder="owner/repository">
+        </label>
+        <label>
+          Target folder
+          <input name="target" autocomplete="off" placeholder="C:\code">
+        </label>
+        <menu>
+          <button class="button" value="cancel">Cancel</button>
+          <button class="button primary" value="default">Prepare GitHub Clone</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="publishDialog" class="dialog">
+      <form method="dialog" class="dialog-body" data-flow="publish">
+        <header>
+          <h2>Publish to GitHub</h2>
+          <button class="icon-button" value="cancel" title="Close" aria-label="Close">x</button>
+        </header>
+        <label>
+          Local folder
+          <input name="path" autocomplete="off" placeholder="C:\code\project">
+        </label>
+        <label>
+          Repository name
+          <input name="name" autocomplete="off" placeholder="project">
+        </label>
+        <fieldset class="visibility-options">
+          <legend>Visibility</legend>
+          <label><input type="radio" name="visibility" value="private" checked> Private</label>
+          <label><input type="radio" name="visibility" value="public"> Public</label>
+        </fieldset>
+        <menu>
+          <button class="button" value="cancel">Cancel</button>
+          <button class="button primary" value="default">Prepare Publish</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="src/main.js"></script>
+  </body>
+</html>

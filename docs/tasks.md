@@ -19,6 +19,8 @@ Wenn ein Task von einem Agenten oder manuell bearbeitet wird, gilt eine strikte 
 
 Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleinere, umsetzbare Aufgaben aufgeteilt. Der Inhalt der Sammelaufgaben ist in den folgenden Tasks erhalten; die Sammelaufgaben wurden entfernt, damit Implementierung und Review nicht gegen zu grosse Akzeptanzkriterien laufen.
 
+Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere Todo-Aufgaben ersetzt. GitHub PR/Checks/Kommentare sind jetzt in `T28` bis `T30` getrennt; Merge/Rebase ist in Scope-Entscheidung `T31` und optionale Umsetzung `T32` getrennt.
+
 ## Aufgaben
 
 ### T1 - Produktquelle und Scope-Gates festziehen
@@ -45,22 +47,23 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 
 ### T3 - Repository-Kontextmodell definieren
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T2`
 - Definition of Done: Ein Repository-Kontextmodell ist dokumentiert oder typisiert und enthaelt Pfad, Anzeigenamen, Git-Status, Branch, Remote, Upstream, ahead/behind, laufende Operationen, Fehlerzustand und GitHub-Verknuepfung; mehrere Kontexte koennen ohne globale Vermischung existieren.
 - Implementierungsnotiz: Jeder Tab repraesentiert genau einen Repository-Kontext. Keine Workspaces modellieren.
 - Notiz: `docs/repository-context-model.md` dokumentiert ein typisiertes RepositoryContext-Modell mit Pfad, Anzeigenamen, Git-Zustand, Branch, Remote, Upstream, ahead/behind, laufenden Operationen, Fehlern, GitHub-Verknuepfung und Isolationsregeln pro Tab.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. `docs/repository-context-model.md` enthaelt das geforderte RepositoryContext-Modell mit Pfad, Anzeigenamen, Git-Zustand, Branch, Remote, Upstream, ahead/behind, Operationen, Fehlern, GitHub-Verknuepfung und expliziten Regeln gegen globale Vermischung mehrerer Tabs.
 - Offene Review-Punkte: -
 
 ### T4 - App-Shell und Projektauswahl bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T3`
 - Definition of Done: Startoberflaeche zeigt dauerhaft gespeicherte zuletzt geoeffnete Repositories sowie Aktionen fuer Repo oeffnen, Clone Repo, Clone from GitHub und Publish to GitHub; ausgewaehlte Repositories werden in Tabs geoeffnet; leere und fehlerhafte Startzustaende sind sichtbar.
 - Implementierungsnotiz: Projektauswahl klein halten. Sie ist Einstieg in Git-Kontexte, kein Dashboard und keine Projektverwaltung. Zuletzt geoeffnete Repositories im lokalen State Store speichern und ungueltige Pfade verstaendlich behandeln.
+- Notiz: Statische App-Shell in `index.html`, `src/styles.css` und `src/main.js` angelegt: Recent Repositories werden in localStorage persistiert, Open/Clone/GitHub-Clone/Publish-Einstiege validieren Eingaben, ausgewaehlte Repositories oeffnen als Tabs, leere und fehlerhafte Startzustaende sind sichtbar.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -234,16 +237,6 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
-### T22 - GitHub PRs, Checks und Review-Kommentare integrieren
-
-- Status: `todo`
-- Prioritaet: `P2`
-- Abhaengigkeiten: `T16`, `T18`
-- Definition of Done: GitHub Remote wird erkannt; PRs koennen erstellt und geoeffnet werden; PR Status, Checks, Check-Ergebnisse, Review-Kommentare und erkannte Issue-Nummern aus Branch/Commit werden angezeigt oder verlinkt; GitHub-Funktionen bleiben auf Versionskontrolle begrenzt.
-- Implementierungsnotiz: Kein Issue Board, kein Kanban, keine Notifications-Zentrale, kein Actions-Dashboard Deluxe, keine Wiki- oder Discussions-Funktionen.
-- Review-Ergebnis: -
-- Offene Review-Punkte: -
-
 ### T23 - Git Output, Fehlertexte und Sicherheitswarnungen fertigstellen
 
 - Status: `todo`
@@ -258,7 +251,7 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T18`, `T19`, `T20`, `T22`, `T23`
+- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T18`, `T19`, `T20`, `T23`, `T28`, `T29`, `T30`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
 - Review-Ergebnis: -
@@ -284,12 +277,52 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
-### T27 - Merge/Rebase-Basisumfang klaeren und umsetzen
+### T28 - GitHub Remote-Erkennung und PR-Erstellung bauen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T16`, `T18`
+- Definition of Done: GitHub-Remote wird aus den Git-Remotes des aktiven Repository-Kontexts erkannt; vorhandene PR fuer den aktuellen Branch wird angezeigt oder verlinkt; neue PR kann mit Base-Branch, Titel und Beschreibung erstellt werden; PR im Browser oder GitHub-UI kann geoeffnet werden; fehlende Auth, fehlende Remote-Zuordnung und API-Fehler werden lesbar angezeigt.
+- Implementierungsnotiz: GitHub-Funktionen bleiben auf Versionskontrolle begrenzt. Kein Issue Board, kein Kanban, keine Notifications-Zentrale und kein allgemeines GitHub-Dashboard.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T29 - GitHub PR-Status und Checks anzeigen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T28`
+- Definition of Done: Fuer erkannte oder erstellte PRs werden PR-Status, Checks, Check-Ergebnisse und Links zu den Detailseiten angezeigt; laufende, erfolgreiche, fehlgeschlagene und unbekannte Check-Zustaende sind unterscheidbar; Rate-Limit-, Berechtigungs- und Netzwerkfehler werden lesbar angezeigt.
+- Implementierungsnotiz: Checks nur anzeigen und oeffnen. Kein Actions-Dashboard Deluxe, keine Workflow-Steuerung und keine CI-Logs als eigenes Produktmodul.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T30 - GitHub Review-Kommentare und Issue-Links anzeigen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T28`
+- Definition of Done: Review-Kommentare der erkannten PR werden angezeigt oder zur GitHub-Ansicht verlinkt; Issue-Nummern aus Branch-Namen und Commit-Messages werden erkannt und als GitHub-Links angeboten; nicht gefundene Issues, fehlende Berechtigungen und API-Fehler werden verstaendlich behandelt.
+- Implementierungsnotiz: Nur Verknuepfung und Anzeige fuer Versionskontrolle. Keine Issue-Verwaltung, keine Discussions, keine Wiki-Funktionen und keine Notifications-Zentrale.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T31 - Merge/Rebase-Basisumfang entscheiden
 
 - Status: `todo`
 - Prioritaet: `P3`
-- Abhaengigkeiten: `T6`, `T8`, `T15`, `T16`, `T23`
-- Definition of Done: Entscheidung ist dokumentiert, ob Merge/Rebase-Basisfunktionen Teil des ersten Produktziels bleiben oder explizit in spaeteren Scope verschoben werden; falls enthalten, funktioniert mindestens Merge des aktuellen Branches mit einem ausgewaehlten Branch inklusive Fortschritt, Konfliktzustand und Git Output; Rebase wird nur angeboten, wenn Fehler-, Warn- und Abbruchfaelle sauber bedienbar sind.
-- Implementierungsnotiz: Kein interaktives Rebase, kein History-Rewrite-Wizard, kein komplexes Cherry-Pick-UI. Wenn Rebase nicht ausreichend sicher abbildbar ist, Produktplan und Scope-Gate klar auf spaeter verschieben.
+- Abhaengigkeiten: `T1`
+- Definition of Done: Produktentscheidung ist dokumentiert, ob Merge und/oder Rebase Teil des ersten Produktziels bleiben oder explizit in spaeteren Scope verschoben werden; Entscheidung benennt erlaubte Aktionen, ausgeschlossene History-Rewrite-Faelle, erforderliche Warnungen, Konfliktverhalten und Git-Output-Anforderungen; `docs/plan.md` und `docs/scope-gates.md` sind bei Scope-Aenderung konsistent.
+- Implementierungsnotiz: Erst entscheiden, dann bauen. Kein interaktives Rebase, kein History-Rewrite-Wizard und kein komplexes Cherry-Pick-UI.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T32 - Merge-Basisfunktion umsetzen
+
+- Status: `todo`
+- Prioritaet: `P3`
+- Abhaengigkeiten: `T6`, `T8`, `T15`, `T16`, `T23`, `T31`
+- Definition of Done: Falls `T31` Merge fuer den ersten Produktumfang freigibt, kann der aktuelle Branch mit einem ausgewaehlten Branch gemerged werden; Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output sind sichtbar; bei uncommitted changes oder Git-Konflikten wird kein Terminal vorausgesetzt; falls `T31` Merge verschiebt, wird dieser Task entsprechend als nicht mehr im ersten Umfang markiert.
+- Implementierungsnotiz: Rebase nur in einem separaten spaeteren Task planen, wenn `T31` es ausdruecklich freigibt und Fehler-, Warn- und Abbruchfaelle sauber bedienbar sind.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
