@@ -9,6 +9,12 @@ Dieses Dokument beschreibt die erste technische Komponentenstruktur fuer Source 
 - Es gibt keinen freien Command Runner, kein Terminal, keinen Editor und keine Plugin-Plattform.
 - Fehler werden strukturiert an die UI gemeldet und koennen zusaetzlich rohe Git- oder GitHub-Ausgaben enthalten.
 
+## Runtime-Entscheidung
+
+Die Web-/HTML-UI bleibt die Frontend-Schicht fuer Prototyp und Full UI. Fuer das Desktop-Ziel ist Tauri gewaehlt; die Begruendung und Bewertung gegen Electron stehen in `docs/desktop-runtime-decision.md`.
+
+Tauri stellt nur eine kontrollierte Bridge fuer lokale Git-CLI-Ausfuehrung, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth und sicheren Tokenzugriff bereit. Renderer-Code erhaelt keine freie Node-, Shell- oder Dateisystem-Schnittstelle. Floating Window und Full UI muessen denselben Repository-State und dieselbe Git Operation Queue nutzen.
+
 ## UI-Schichten
 
 ### App Shell und Projektauswahl
@@ -189,6 +195,10 @@ Ausgeschlossene Funktionen:
 - Issue Board, Kanban, Wiki oder Discussions
 - eigenes SSH-Key-Management
 
+Auth-Entscheidung:
+- Der konkrete GitHub-Auth-Flow und die sichere Token-Speicherung sind in `docs/github-auth-decision.md` festgelegt.
+- GitHub-API-Token duerfen nur durch die Auth-/Token-Verwaltung gelesen werden; der API Client erhaelt Tokens backend-intern und gibt sie nie an den Renderer weiter.
+
 ### Dateiwatcher
 
 Verantwortung:
@@ -244,7 +254,7 @@ Verantwortung:
 - fehlende oder unzureichende Berechtigungen fuer GitHub-Funktionen melden
 
 Erlaubte Eingaben:
-- GitHub-OAuth- oder Device-Flow-Ergebnis
+- GitHub Device-Flow-Ergebnis gemaess `docs/github-auth-decision.md`
 - Logout-Aktion
 - Anfrage nach Auth-Status fuer GitHub-Funktionen
 
@@ -258,7 +268,13 @@ Fehlerausgaben:
 Ausgeschlossene Funktionen:
 - eigenes SSH-Key-Management
 - Speicherung von Tokens im lokalen State Store
+- Speicherung von Tokens im Renderer, in Web Storage, in Repository-Kontexten, in Git-Remote-URLs oder in Git-Command-Argumenten
 - automatische GitHub-Aktionen ohne explizite Nutzeraktion
+
+Speicherentscheidung:
+- Tauri koordiniert den GitHub OAuth Device Authorization Flow im Backend.
+- Tokens werden ueber eine native `SecureTokenStore`-Abstraktion im Betriebssystem-Credential-Store gespeichert: Windows Credential Manager, macOS Keychain oder Linux Secret Service/libsecret.
+- Der Web-Prototyp darf keine persistente GitHub-Auth einfuehren; echte Persistenz beginnt erst in der Desktop-Shell.
 
 ## Fehlervertrag
 

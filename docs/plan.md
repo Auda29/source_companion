@@ -361,7 +361,8 @@ Begruendung:
 Technische Richtung:
 - Web-UI als wiederverwendbare Frontend-Schicht behalten.
 - Desktop-Shell spaeter darum legen.
-- Tauri oder Electron evaluieren, mit Praeferenz fuer eine schlanke lokale Desktop-App.
+- Tauri ist die gewaehlte Desktop-Shell; die Bewertung gegen Electron ist in `docs/desktop-runtime-decision.md` dokumentiert.
+- Die Tauri-Bridge darf nur whitelisted Git-, GitHub-, Dateiwatcher- und Datei-/Ordnerauswahl-Aktionen exponieren.
 
 Desktop-Zielbild:
 - kleines Floating Window als kompakter Standardmodus

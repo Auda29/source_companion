@@ -64,6 +64,11 @@ async function loadRepositoryState({
   }
 
   const parsedStatus = parsePorcelainStatus(status.stdout);
+  const stashResult = await execute({
+    action: "stash",
+    repositoryPath: normalizedPath,
+    options: { mode: "list" }
+  });
   const remoteResult = await execute({
     action: "remote",
     repositoryPath: normalizedPath,
@@ -91,7 +96,8 @@ async function loadRepositoryState({
       staged: parsedStatus.files.filter((file) => file.staged),
       unstaged: parsedStatus.files.filter((file) => file.unstaged),
       untracked: parsedStatus.files.filter((file) => file.untracked),
-      conflicted
+      conflicted,
+      stashes: stashResult.ok ? parseStashList(stashResult.stdout) : []
     },
     github,
     error: remoteResult.ok ? null : normalizeGitError(remoteResult.error)
@@ -327,8 +333,26 @@ function emptyGitState() {
     staged: [],
     unstaged: [],
     untracked: [],
-    conflicted: []
+    conflicted: [],
+    stashes: []
   };
+}
+
+function parseStashList(output) {
+  return String(output || "").split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(stash@\{\d+\}):\s*(.*)$/);
+      const ref = match ? match[1] : "";
+      const summary = match ? match[2] : line;
+      const branchMatch = summary.match(/^On\s+([^:]+):\s*(.*)$/);
+      return {
+        ref,
+        summary,
+        branch: branchMatch ? branchMatch[1] : null,
+        message: branchMatch ? branchMatch[2] : summary
+      };
+    });
 }
 
 function checkFolder(repositoryPath) {
@@ -378,5 +402,6 @@ function clean(value) {
 module.exports = {
   loadRepositoryState,
   parsePorcelainStatus,
-  parseRemotes
+  parseRemotes,
+  parseStashList
 };

@@ -23,6 +23,8 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discard muss bei gemischten Datei-Zustaenden wie `MM` den ausgewaehlten Bucket respektieren, damit Worktree-Discard nicht versehentlich staged Inhalt verliert. `T13` bleibt im Review, sollte aber erst nach dem `T12`-Fix final abgenommen werden.
 
+Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37` und `T38` ersetzt, damit Auth-/Token-Speicherentscheidung und API-Implementierung getrennt reviewbar sind. Die gemischte Clone-Aufgabe `T19` wurde durch `T39` und `T40` ersetzt, damit URL-Clone nicht unnoetig von GitHub Auth blockiert wird.
+
 ## Aufgaben
 
 ### T1 - Produktquelle und Scope-Gates festziehen
@@ -171,62 +173,87 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 ### T14 - Commit- und Amend-Flow bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T10`, `T12`
 - Definition of Done: Commit Message, normaler Commit, Commit staged changes und Amend Commit sind bedienbar; Commit-Button ist nur aktiv, wenn Commit moeglich ist; Commit-Varianten sind ueber ein Dropdown erreichbar; fehlende Message, leeres Staging und Git-Fehler werden nahe am Commit-Bereich angezeigt; Amend ist sichtbar als history-aendernde Aktion markiert; UI laesst spaeteren Generierungsflow fuer leere Commit Message zu.
 - Implementierungsnotiz: Codex-Commit-UI als Referenz nehmen: Commit-Message-Feld prominent, klare Primaeraktion und Dropdown fuer Varianten. Optionaler Hinweis "leer lassen zum Generieren" erst wenn AI Commit Message entschieden ist. Keine AI Commit Message in diesem Task.
 - Notiz: `src/repository-commit-actions.js` kapselt Commit, Commit staged changes und Amend Commit ueber den Git Wrapper mit Message-/Staging-Validierung und lesbaren Git-Fehlern; `src/main.js` rendert pro Repository-Tab einen Commit-Bereich mit Message-Feld, deaktivierter Primaeraktion bis Commit moeglich ist, Varianten-Dropdown, Amend-Warnung, Inline-Status, Git Output und Refresh nach Erfolg. `tests/repository-commit-actions.test.js` deckt Validierung, strukturierten Command-Bau sowie echten Commit- und Amend-Lauf ab.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. Commit Message, normaler Commit, Commit staged changes und Amend sind im UI bedienbar; Primaeraktion und Varianten validieren Message, Staging und Konfliktzustand, Amend ist als history-aendernde Aktion bestaetigungspflichtig markiert, Git-Fehler/Git Output werden sichtbar, und die echten Commit-/Amend-Tests bestanden.
 - Offene Review-Punkte: -
 
 ### T15 - Branch-Anzeige und Branch-Aktionen bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T8`
 - Definition of Done: Aktueller Branch, Upstream und ahead/behind sind sichtbar; Branch erstellen, wechseln und loeschen funktionieren; Remote-Branch auschecken ist abgedeckt; Branch loeschen warnt, wenn Git Risiko oder Fehler meldet.
 - Implementierungsnotiz: Bei uncommitted changes keine eigene Git-Magie bauen. Git-Fehler lesbar anzeigen oder auf Stash-Flow verweisen.
-- Review-Ergebnis: -
+- Notiz: `src/repository-branch-actions.js` kapselt Branch erstellen, wechseln, sicher loeschen und Remote-Branch-Checkout ueber den Git Wrapper; `src/main.js` zeigt einen Branch-Bereich mit aktuellem Branch, Upstream, ahead/behind und den Branch-Aktionen inklusive Delete-Warnung, lesbarem Status, Git Output und Refresh nach Erfolg. `tests/repository-branch-actions.test.js` deckt strukturierte Commands, Validierung und echte Git-Laeufe inklusive Remote-Checkout ab.
+- Review-Ergebnis: Bestanden am 2026-06-03. Branch, Upstream und ahead/behind werden angezeigt; Branch erstellen, wechseln, sicher loeschen und Remote-Branch-Checkout laufen ueber den whitelisted Git Wrapper mit Warnung und lesbaren Fehlern. Fokussierte Branch-/Wrapper-Tests und die vollstaendige Node-Test-Suite bestanden.
 - Offene Review-Punkte: -
 
 ### T16 - Fetch, Pull, Push, Sync und Publish Branch bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T8`, `T15`
 - Definition of Done: Fetch, Pull, Push, Sync, Commit and Push und Publish Branch sind ueber UI-Aktionen oder Commit-Dropdown-Varianten ausfuehrbar; Fortschritt, Erfolg und Fehler sind sichtbar; Pull-Konflikte fuehren in den Konfliktzustand; Force Push wird nicht angeboten.
 - Implementierungsnotiz: Codex-UI fuer Committen/Pushen ist eine gute Referenz. Sync und Commit and Push muessen transparent machen, welche Git-Schritte ausgefuehrt werden.
-- Review-Ergebnis: -
+- Notiz: `src/repository-sync-actions.js` kapselt Fetch, Pull, Push, Sync, Commit and Push und Publish Branch ueber den whitelisted Git Wrapper; `src/main.js` zeigt Remote-Sync-Aktionen plus Commit-and-Push im Commit-Dropdown mit Status, Git Output und Refresh nach Ausfuehrung. Force Push wird nicht angeboten; `tests/repository-sync-actions.test.js` deckt strukturierte Commands und echte lokale Remote-Laeufe ab.
+- Review-Ergebnis: Bestanden am 2026-06-03. Fetch, Pull, Push, Sync, Commit and Push und Publish Branch laufen ueber den whitelisted Git Wrapper, sind in `src/main.js` sichtbar verdrahtet, zeigen laufenden Status, Erfolg, Fehler und Git Output, melden Pull-/Sync-Konflikte lesbar und bieten keinen Force Push an. Fokussierte Sync-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T17 - Stash-Basisfunktionen umsetzen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T8`, `T15`
 - Definition of Done: Aenderungen stashen, Stash-Liste anzeigen, Stash anwenden, Stash loeschen und Stash mit kurzer Message anlegen funktionieren; Fehler und Konflikte beim Anwenden sind sichtbar; Stash bleibt Basisfunktion und wird nicht zum Backup-Manager.
 - Implementierungsnotiz: Kein teilweise anwenden, kein komplexer Stash-Browser, kein Stash-Konflikt-Assistent.
-- Review-Ergebnis: -
+- Notiz: `src/repository-stash-actions.js` kapselt Stash-Liste, Stash Push mit optionaler Message/Untracked, Apply und Drop ueber den Git Wrapper; `src/repository-state.js` laedt Stash-Eintraege, und `src/main.js` zeigt einen kompakten Stash-Bereich mit Status, Apply/Delete und Git Output. `tests/repository-stash-actions.test.js` deckt strukturierte Commands, Validierung, echte Push/List/Apply/Drop-Laeufe und einen echten Apply-Konflikt ab.
+- Review-Ergebnis: Bestanden am 2026-06-03. Stash Push mit optionaler Message/Untracked, Stash-Liste, Apply und Drop laufen ueber den whitelisted Git Wrapper; `src/repository-state.js` laedt Stash-Eintraege, `src/main.js` zeigt Status, Fehler, Git Output und eine bestaetigte Drop-Warnung, und Apply-Konflikte werden lesbar gemeldet. Fokussierte Stash-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
-### T18 - GitHub Auth und API Client implementieren
+### T37 - GitHub Auth-Flow und Token-Speicherung entscheiden
+
+- Status: `done`
+- Prioritaet: `P1`
+- Abhaengigkeiten: `T2`, `T33`
+- Definition of Done: Die GitHub-Auth-Variante fuer die gewaehlte Desktop-Shell ist dokumentiert; sichere Token-Speicherung ist konkret benannt; Logout-/Token-Revocation-Verhalten, no-token Zustand, fehlende Scopes, Rate-Limit- und Netzwerkfehler sind als Fehlervertrag beschrieben; Web-Prototyp darf keine unsichere Token-Persistenz als finale Loesung einfuehren.
+- Implementierungsnotiz: GitHub + HTTPS priorisieren. Kein eigenes SSH-Key-Management bauen. Falls Device Flow, OAuth-App oder Credential Manager genutzt wird, erforderliche Scopes und Redirect-/Polling-Verhalten explizit festhalten.
+- Notiz: `docs/github-auth-decision.md` legt GitHub OAuth Device Flow ueber die Tauri-Backend-Bridge, OS-Credential-Store-Speicherung via `SecureTokenStore`, no-token Zustand, Logout/Revocation, Scope-Anforderungen, Rate-Limit-/Netzwerk-/API-Fehlervertrag und Web-Prototyp-Grenzen ohne unsichere Token-Persistenz fest; `docs/architecture.md` verweist auf diese Entscheidung.
+- Review-Ergebnis: Bestanden am 2026-06-03. `docs/github-auth-decision.md` dokumentiert GitHub OAuth Device Flow ueber die Tauri-Backend-Bridge, sichere Token-Speicherung via OS-Credential-Store/`SecureTokenStore`, Logout/Revocation, no-token Zustand, fehlende Scopes, Rate-Limit-, Netzwerk- und API-Fehler sowie die Grenze gegen unsichere Token-Persistenz im Web-Prototyp; `docs/architecture.md` verweist auf diese Auth-Entscheidung.
+- Offene Review-Punkte: -
+
+### T38 - GitHub Auth und Basis-API-Client implementieren
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T2`
-- Definition of Done: GitHub Login funktioniert; Token werden sicher gespeichert; Logout ist moeglich; User-Repositories koennen geladen und durchsucht werden; fehlende Berechtigungen und API-Fehler werden lesbar angezeigt.
-- Implementierungsnotiz: GitHub + HTTPS priorisieren. Kein eigenes SSH-Key-Management bauen.
+- Abhaengigkeiten: `T37`
+- Definition of Done: GitHub Login und Logout funktionieren gemaess `T37`; Token werden ueber den entschiedenen sicheren Speicher gelesen und geschrieben; Auth-Status ist fuer Repository-Kontexte und GitHub-Aktionen abrufbar; User-Repositories koennen geladen und durchsucht werden; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert und lesbar angezeigt.
+- Implementierungsnotiz: API-Client klein halten: Login-Status, User-Repos und gemeinsame Fehlernormalisierung zuerst. PR-, Checks- und Publish-spezifische API-Methoden in den abhaengigen Tasks ergaenzen, nicht als versteckten Rundumschlag.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
-### T19 - Clone per URL und Clone from GitHub bauen
+### T39 - Clone per URL bauen
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T6`, `T18`, `T4`
-- Definition of Done: Clone Repo per URL funktioniert mit frei waehlbarem Zielordner; Clone from GitHub zeigt durchsuchbare Repositories des eingeloggten Users mit Owner/Name, Beschreibung, Sichtbarkeit, Stars, Clone-URL und private/public Indikator, soweit GitHub diese Daten liefert; Clone-Fortschritt und Fehler sind sichtbar; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
-- Implementierungsnotiz: HTTPS-, SSH- und GitHub-URLs akzeptieren. SSH nur nutzen, wenn lokales Git/SSH bereits funktioniert. Liste soll nach Repository-Name filterbar sein und die gewaehlte Clone-URL transparent machen.
+- Abhaengigkeiten: `T4`, `T6`, `T7`
+- Definition of Done: Clone Repo per URL funktioniert mit frei waehlbarem Zielordner; HTTPS-, SSH- und GitHub-URLs werden an den Git Wrapper uebergeben; Clone-Fortschritt, Erfolg und Fehler sind sichtbar; SSH-Fehler verweisen auf das vorhandene lokale Git/SSH-Setup statt eigenes SSH-Key-Management anzubieten; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
+- Implementierungsnotiz: URL-Clone darf ohne GitHub Login funktionieren. Zielordner-Auswahl und Clone-Operation muessen ueber die kontrollierte Runtime-/Bridge-Schicht laufen und duerfen keine freie Shell exposed.
+- Notiz: `src/repository-clone-actions.js` fuehrt URL-Clone ueber den whitelisted Git Wrapper aus, normalisiert Clone-Fehler inklusive SSH-Hinweis auf lokales Git/SSH-Setup und wird von `src/main.js` direkt aus dem Clone-Dialog mit sichtbarem Clone-Status, Git Output, automatischem Tab und Refresh nach Erfolg verdrahtet. `tests/repository-clone-actions.test.js` prueft Request-Bau, Validierung und einen echten Clone-Lauf ueber den Wrapper.
+- Review-Ergebnis: Re-Review nicht bestanden am 2026-06-03. Die Clone-Basisschicht und fokussierten Tests laufen, aber die UI erfuellt den Zielordner-Teil der Definition of Done nicht.
+- Offene Review-Punkte: `src/main.js` verwendet den im Clone-Dialog eingegebenen Zielordner als Parent und haengt immer `repoNameFromUrl(url)` an (`targetPath: joinPath(target, repoName)`). Dadurch kann der Nutzer den finalen Clone-Zielordner nicht frei waehlen; bei Eingabe von `C:\code\custom-name` wuerde nach `C:\code\custom-name\<repo>` geklont. T39 muss entweder den eingegebenen absoluten Zielordner unveraendert an `runCloneAction`/Git Wrapper uebergeben oder UI/Task explizit auf "Parent folder + abgeleiteter Repo-Name" aendern und entsprechend testen.
+
+### T40 - Clone from GitHub bauen
+
+- Status: `todo`
+- Prioritaet: `P1`
+- Abhaengigkeiten: `T4`, `T38`, `T39`
+- Definition of Done: Clone from GitHub zeigt durchsuchbare Repositories des eingeloggten Users mit Owner/Name, Beschreibung, Sichtbarkeit, Stars, Clone-URL und private/public Indikator, soweit GitHub diese Daten liefert; die gewaehlte Clone-URL ist vor Ausfuehrung sichtbar; Zielordner ist frei waehlbar; Clone-Fortschritt und Fehler sind sichtbar; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
+- Implementierungsnotiz: Reuse des URL-Clone-Flows aus `T39`; GitHub-Auswahl liefert nur Repository-Metadaten und Clone-URL. Keine GitHub-Dashboard-, Issue- oder Notification-Funktionen aufnehmen.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -234,7 +261,7 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T6`, `T8`, `T14`, `T18`
+- Abhaengigkeiten: `T6`, `T8`, `T14`, `T38`
 - Definition of Done: Lokaler Ordner oder lokales Git-Repo kann nach GitHub gepublished werden; Repository-Name wird vorgeschlagen; Beschreibung ist optional; private/public Auswahl ist vorhanden; origin wird gesetzt und initial push ausgefuehrt; vorhandene Remotes werden nicht still ueberschrieben.
 - Implementierungsnotiz: Wenn noch kein Git-Repo existiert, `git init` explizit bestaetigen. Wenn keine Commits existieren, zum Commit-Flow fuehren.
 - Review-Ergebnis: -
@@ -264,7 +291,7 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T18`, `T19`, `T20`, `T23`, `T28`, `T29`, `T30`
+- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T20`, `T23`, `T28`, `T29`, `T30`, `T38`, `T39`, `T40`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
 - Review-Ergebnis: -
@@ -294,7 +321,7 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T16`, `T18`
+- Abhaengigkeiten: `T16`, `T38`
 - Definition of Done: GitHub-Remote wird aus den Git-Remotes des aktiven Repository-Kontexts erkannt; vorhandene PR fuer den aktuellen Branch wird angezeigt oder verlinkt; neue PR kann mit Base-Branch, Titel und Beschreibung erstellt werden; PR im Browser oder GitHub-UI kann geoeffnet werden; fehlende Auth, fehlende Remote-Zuordnung und API-Fehler werden lesbar angezeigt.
 - Implementierungsnotiz: GitHub-Funktionen bleiben auf Versionskontrolle begrenzt. Kein Issue Board, kein Kanban, keine Notifications-Zentrale und kein allgemeines GitHub-Dashboard.
 - Review-Ergebnis: -
@@ -342,19 +369,20 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 ### T33 - Desktop-App-Laufzeitentscheidung treffen
 
-- Status: `todo`
-- Prioritaet: `P2`
+- Status: `done`
+- Prioritaet: `P1`
 - Abhaengigkeiten: `T2`, `T4`, `T6`, `T8`
 - Definition of Done: Entscheidung fuer die Desktop-Shell ist dokumentiert; Tauri und Electron wurden gegen lokale Git-CLI-Ausfuehrung, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth, Packaging, Update-Strategie und UI-Wiederverwendung bewertet; `docs/plan.md` und Architekturdocs beschreiben Web-Prototyp plus Desktop-Ziel klar.
 - Implementierungsnotiz: Praeferenz ist eine schlanke lokale Desktop-App. Web-UI bleibt als Frontend-Schicht erhalten; Desktop-Shell darf keine neue Produktdomaene einfuehren.
-- Review-Ergebnis: -
+- Notiz: `docs/desktop-runtime-decision.md` waehlt Tauri als Desktop-Shell und bewertet Tauri/Electron gegen Git CLI, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth, sichere Token-Speicherung, Packaging, Updates und UI-Wiederverwendung; `docs/plan.md` und `docs/architecture.md` verweisen jetzt auf Web-Prototyp plus Tauri-Desktop-Ziel mit kontrollierter Bridge.
+- Review-Ergebnis: Bestanden am 2026-06-03. `docs/desktop-runtime-decision.md` waehlt Tauri als Desktop-Shell und bewertet Tauri/Electron gegen Git CLI, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth, sichere Token-Speicherung, Packaging, Updates und UI-Wiederverwendung; `docs/plan.md` und `docs/architecture.md` beschreiben Web-Prototyp plus Tauri-Desktop-Ziel mit kontrollierter Bridge konsistent.
 - Offene Review-Punkte: -
 
 ### T34 - Desktop-Shell fuer Full UI vorbereiten
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T33`, `T4`, `T6`, `T8`, `T18`
+- Abhaengigkeiten: `T33`, `T4`, `T6`, `T8`, `T38`
 - Definition of Done: Die bestehende Web-UI laeuft innerhalb einer lokalen Desktop-Shell; Git CLI, Dateiwatcher, lokale Ordnerauswahl und GitHub Auth sind ueber eine kontrollierte Bridge erreichbar; Full UI entspricht funktional der Web-Version.
 - Implementierungsnotiz: Keine direkte Node- oder Shell-Freiheit im Renderer exponieren. Bridge nur fuer whitelisted Git/GitHub/Filesystem-Aktionen. Bestehende UI-Komponenten wiederverwenden.
 - Review-Ergebnis: -

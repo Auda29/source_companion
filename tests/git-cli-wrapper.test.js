@@ -56,6 +56,11 @@ test("builds Git arguments from structured options", () => {
     "--message",
     "wip"
   ]);
+  assert.deepEqual(buildGitArgs("stash", { mode: "apply", ref: "stash@{0}" }), [
+    "stash",
+    "apply",
+    "stash@{0}"
+  ]);
   assert.deepEqual(buildGitArgs("clean", { pathspecs: ["scratch.txt"] }), [
     "clean",
     "--force",
@@ -73,6 +78,16 @@ test("builds Git arguments from structured options", () => {
     "--message",
     "Ship app",
     "--amend"
+  ]);
+  assert.deepEqual(buildGitArgs("branch", { mode: "list", all: true }), [
+    "branch",
+    "--list",
+    "--all"
+  ]);
+  assert.deepEqual(buildGitArgs("switch", { branch: "origin/feature", track: true }), [
+    "switch",
+    "--track",
+    "origin/feature"
   ]);
 });
 

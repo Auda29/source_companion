@@ -422,8 +422,227 @@ textarea {
 .change-bucket,
 .change-list,
 .change-preview,
+.branch-panel,
+.sync-panel,
+.stash-panel,
 .commit-box {
   min-width: 0;
+}
+
+.branch-panel,
+.sync-panel,
+.stash-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.branch-panel-heading,
+.sync-panel-heading,
+.stash-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.branch-panel-heading h3,
+.sync-panel-heading h3,
+.stash-panel-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.branch-panel-heading p,
+.sync-panel-heading p,
+.stash-panel-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stash-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.stash-form label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stash-form input[type="text"],
+.stash-form input:not([type]) {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.stash-form input:focus {
+  outline: 2px solid rgb(36 107 107 / 0.2);
+  border-color: var(--accent);
+}
+
+.checkbox-label {
+  min-height: 36px;
+  grid-template-columns: auto auto;
+  align-items: center;
+  align-content: center;
+  justify-content: start;
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+}
+
+.stash-list {
+  display: grid;
+  gap: 6px;
+}
+
+.stash-empty {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stash-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.stash-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.stash-text strong,
+.stash-text span,
+.stash-text small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-text small {
+  color: var(--muted);
+}
+
+.stash-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.branch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.branch-form {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.branch-form:first-child,
+.branch-form:nth-child(3) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.branch-form label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.branch-form input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.branch-form input:focus {
+  outline: 2px solid rgb(36 107 107 / 0.2);
+  border-color: var(--accent);
+}
+
+.branch-status,
+.sync-status,
+.stash-status {
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.branch-status.success,
+.sync-status.success,
+.stash-status.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.branch-status.error,
+.sync-status.error,
+.stash-status.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.branch-status.running,
+.sync-status.running,
+.stash-status.running {
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .commit-box {
@@ -988,6 +1207,13 @@ textarea {
   }
 
   .source-control-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .branch-grid,
+  .branch-form,
+  .branch-form:first-child,
+  .branch-form:nth-child(3) {
     grid-template-columns: 1fr;
   }
 }

@@ -12,6 +12,10 @@
     repositoryFileActionRunner: resolveRepositoryFileActionRunner(),
     repositoryHunkActionRunner: resolveRepositoryHunkActionRunner(),
     repositoryCommitActionRunner: resolveRepositoryCommitActionRunner(),
+    repositoryBranchActionRunner: resolveRepositoryBranchActionRunner(),
+    repositorySyncActionRunner: resolveRepositorySyncActionRunner(),
+    repositoryStashActionRunner: resolveRepositoryStashActionRunner(),
+    repositoryCloneActionRunner: resolveRepositoryCloneActionRunner(),
     repositoryStatusWatcher: null
   };
   state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
@@ -73,7 +77,7 @@
     }
 
     if (flow === "clone") {
-      return prepareClone(formData.get("url"), formData.get("target"), "Clone setup", "clone");
+      return prepareClone(formData.get("url"), formData.get("target"));
     }
 
     if (flow === "github") {
@@ -120,18 +124,59 @@
     return true;
   }
 
-  function prepareClone(urlValue, targetValue, status, operationKind) {
+  function prepareClone(urlValue, targetValue) {
     const url = clean(urlValue);
     const target = clean(targetValue);
     if (!isCloneUrl(url) || !isAbsolutePath(target)) {
-      setMessage("error", "Enter a Git URL and an absolute target folder.");
+      setMessage("error", "Enter an HTTPS, SSH, or GitHub URL and an absolute target folder.");
       render();
       return false;
     }
 
     const repoName = repoNameFromUrl(url);
-    openPreparedRepository(joinPath(target, repoName), repoName, status, { initialOperationKind: operationKind });
+    openCloneRepository({
+      url,
+      targetPath: joinPath(target, repoName),
+      displayName: repoName
+    });
     return true;
+  }
+
+  function openCloneRepository({ url, targetPath, displayName }) {
+    const existing = state.tabs.find((tab) => samePath(tab.path, targetPath));
+    if (existing) {
+      state.activeTabId = existing.id;
+      setMessage("success", `${existing.displayName} is already open.`);
+      render();
+      return;
+    }
+
+    const tab = createRepositoryContext({
+      displayName,
+      path: targetPath,
+      entryStatus: "Clone running",
+      initialOperationKind: "clone"
+    });
+    tab.cloneRequest = { url, targetPath };
+    tab.cloneAction = {
+      status: "running",
+      action: "clone",
+      message: "Cloning repository.",
+      completedAt: null
+    };
+    tab.health = "operation-running";
+    tab.operations.running = tab.operations.queued.map((operation) => ({
+      ...operation,
+      status: "running",
+      startedAt: new Date().toISOString()
+    }));
+    tab.operations.queued = [];
+
+    state.tabs.push(tab);
+    state.activeTabId = tab.id;
+    setMessage("success", `Cloning ${displayName}.`);
+    render();
+    runRepositoryCloneAction(tab.id);
   }
 
   function openPreparedRepository(path, name, status, options = {}) {
@@ -387,6 +432,34 @@
         runRepositoryCommitAction(active.id, button.dataset.commitAction);
       });
     });
+
+    workspaceContent.querySelectorAll("[data-branch-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        runRepositoryBranchAction(active.id, form.dataset.branchAction, new FormData(form));
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-sync-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runRepositorySyncAction(active.id, button.dataset.syncAction);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-stash-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        runRepositoryStashAction(active.id, form.dataset.stashAction, new FormData(form));
+      });
+    });
+
+    workspaceContent.querySelectorAll("button[data-stash-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const formData = new FormData();
+        if (button.dataset.stashRef) formData.set("ref", button.dataset.stashRef);
+        runRepositoryStashAction(active.id, button.dataset.stashAction, formData);
+      });
+    });
   }
 
   function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
@@ -438,6 +511,11 @@
       fileAction: null,
       commitMessage: "",
       commitAction: null,
+      branchAction: null,
+      syncAction: null,
+      stashAction: null,
+      cloneAction: null,
+      cloneRequest: null,
       gitOutput: [],
       watchHandle: null
     };
@@ -762,6 +840,11 @@
       tab.commitMessage = messageInput.value;
     }
 
+    if (action === "commit-and-push") {
+      await runRepositorySyncAction(tabId, action);
+      return;
+    }
+
     const validation = validateCommitAction(tab, action);
     if (!validation.ok) {
       tab.commitAction = {
@@ -837,6 +920,327 @@
     }
   }
 
+  async function runRepositorySyncAction(tabId, action) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const messageInput = workspaceContent.querySelector("[data-commit-message]");
+    if (messageInput) {
+      tab.commitMessage = messageInput.value;
+    }
+
+    const validation = validateSyncAction(tab, action);
+    if (!validation.ok) {
+      tab.syncAction = {
+        status: "failed",
+        action,
+        message: validation.message,
+        completedAt: new Date().toISOString()
+      };
+      if (action === "commit-and-push") {
+        tab.commitAction = {
+          status: "failed",
+          action,
+          message: validation.message,
+          completedAt: new Date().toISOString()
+        };
+      }
+      render();
+      return;
+    }
+
+    tab.syncAction = {
+      status: "running",
+      action,
+      message: syncActionRunningLabel(action),
+      completedAt: null
+    };
+    if (action === "commit-and-push") {
+      tab.commitAction = {
+        status: "running",
+        action,
+        message: syncActionRunningLabel(action),
+        completedAt: null
+      };
+    }
+    render();
+
+    const runSyncAction = state.repositorySyncActionRunner;
+    if (!runSyncAction) {
+      applySyncActionResult(tabId, {
+        ok: false,
+        action,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository sync actions are not available in this runtime.",
+        error: {
+          kind: "repository-sync-actions-unavailable",
+          message: "Repository sync actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runSyncAction({
+        repositoryPath: tab.path,
+        git: tab.git,
+        action,
+        message: tab.commitMessage
+      });
+      applySyncActionResult(tabId, result);
+      const updated = state.tabs.find((item) => item.id === tabId);
+      if (updated && result.ok && action === "commit-and-push") {
+        updated.commitMessage = "";
+        updated.diffPreview = null;
+      }
+      refreshRepositoryState(tabId, `sync-${action}`);
+    } catch (error) {
+      applySyncActionResult(tabId, {
+        ok: false,
+        action,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Sync action failed.",
+        error: {
+          kind: "sync-action-error",
+          message: error && error.message ? error.message : "Sync action failed."
+        }
+      });
+    }
+  }
+
+  async function runRepositoryBranchAction(tabId, action, formData) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const values = {
+      name: clean(formData.get("name")),
+      startPoint: clean(formData.get("startPoint")),
+      remoteBranch: clean(formData.get("remoteBranch")),
+      localName: clean(formData.get("localName"))
+    };
+
+    if (action === "delete" && values.name && !confirmBranchDelete(values.name)) {
+      return;
+    }
+
+    tab.branchAction = {
+      status: "running",
+      action,
+      branch: branchActionTarget(action, values),
+      message: branchActionRunningLabel(action),
+      completedAt: null
+    };
+    render();
+
+    const runBranchAction = state.repositoryBranchActionRunner;
+    if (!runBranchAction) {
+      applyBranchActionResult(tabId, {
+        ok: false,
+        action,
+        branch: branchActionTarget(action, values),
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository branch actions are not available in this runtime.",
+        error: {
+          kind: "repository-branch-actions-unavailable",
+          message: "Repository branch actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runBranchAction({
+        repositoryPath: tab.path,
+        git: tab.git,
+        action,
+        name: values.name,
+        startPoint: values.startPoint,
+        remoteBranch: values.remoteBranch,
+        localName: values.localName
+      });
+      applyBranchActionResult(tabId, result);
+      if (result.ok) {
+        refreshRepositoryState(tabId, `branch-${action}`);
+      }
+    } catch (error) {
+      applyBranchActionResult(tabId, {
+        ok: false,
+        action,
+        branch: branchActionTarget(action, values),
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Branch action failed.",
+        error: {
+          kind: "branch-action-error",
+          message: error && error.message ? error.message : "Branch action failed."
+        }
+      });
+    }
+  }
+
+  async function runRepositoryStashAction(tabId, action, formData) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const values = {
+      message: clean(formData && formData.get("message")),
+      includeUntracked: Boolean(formData && formData.get("includeUntracked")),
+      ref: clean(formData && formData.get("ref"))
+    };
+
+    const validation = validateStashAction(tab, action, values);
+    if (!validation.ok) {
+      tab.stashAction = {
+        status: "failed",
+        action,
+        ref: values.ref || null,
+        message: validation.message,
+        completedAt: new Date().toISOString()
+      };
+      render();
+      return;
+    }
+
+    if (action === "drop" && values.ref && !confirmStashDrop(values.ref)) {
+      return;
+    }
+
+    tab.stashAction = {
+      status: "running",
+      action,
+      ref: values.ref || null,
+      message: stashActionRunningLabel(action),
+      completedAt: null
+    };
+    render();
+
+    const runStashAction = state.repositoryStashActionRunner;
+    if (!runStashAction) {
+      applyStashActionResult(tabId, {
+        ok: false,
+        action,
+        ref: values.ref || null,
+        stashes: [],
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository stash actions are not available in this runtime.",
+        error: {
+          kind: "repository-stash-actions-unavailable",
+          message: "Repository stash actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runStashAction({
+        repositoryPath: tab.path,
+        action,
+        message: values.message,
+        includeUntracked: values.includeUntracked,
+        ref: values.ref
+      });
+      applyStashActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated && action === "list") {
+          updated.git = {
+            ...updated.git,
+            stashes: Array.isArray(result.stashes) ? result.stashes : []
+          };
+          render();
+        }
+        if (action !== "list") {
+          refreshRepositoryState(tabId, `stash-${action}`);
+        }
+      }
+    } catch (error) {
+      applyStashActionResult(tabId, {
+        ok: false,
+        action,
+        ref: values.ref || null,
+        stashes: [],
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Stash action failed.",
+        error: {
+          kind: "stash-action-error",
+          message: error && error.message ? error.message : "Stash action failed."
+        }
+      });
+    }
+  }
+
+  async function runRepositoryCloneAction(tabId) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab || !tab.cloneRequest) return;
+
+    const runCloneAction = state.repositoryCloneActionRunner;
+    if (!runCloneAction) {
+      applyCloneActionResult(tabId, {
+        ok: false,
+        action: "clone",
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository clone actions are not available in this runtime.",
+        error: {
+          kind: "repository-clone-actions-unavailable",
+          message: "Repository clone actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runCloneAction({
+        url: tab.cloneRequest.url,
+        targetPath: tab.cloneRequest.targetPath
+      });
+      applyCloneActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated) {
+          updated.entryStatus = "Clone completed";
+          updated.cloneRequest = null;
+          addRecent(updated);
+          startRepositoryWatch(updated);
+          refreshRepositoryState(tabId, "clone");
+        }
+      }
+    } catch (error) {
+      applyCloneActionResult(tabId, {
+        ok: false,
+        action: "clone",
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Clone failed.",
+        error: {
+          kind: "clone-action-error",
+          message: error && error.message ? error.message : "Clone failed."
+        }
+      });
+    }
+  }
+
   function applyCommitActionResult(tabId, result) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -850,6 +1254,108 @@
     };
     tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
     setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Commit completed." : "Commit failed."));
+    render();
+  }
+
+  function applyBranchActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.branchAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action,
+      branch: result.branch || null,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Branch action completed." : "Branch action failed."));
+    render();
+  }
+
+  function applySyncActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.syncAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    if (result.action === "commit-and-push") {
+      tab.commitAction = {
+        status: result.ok ? "succeeded" : "failed",
+        action: result.action,
+        message: result.message,
+        error: result.error || null,
+        completedAt: new Date().toISOString()
+      };
+    }
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Sync action completed." : "Sync action failed."));
+    render();
+  }
+
+  function applyStashActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.stashAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action,
+      ref: result.ref || null,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Stash action completed." : "Stash action failed."));
+    render();
+  }
+
+  function applyCloneActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const completedAt = new Date().toISOString();
+    tab.cloneAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: "clone",
+      message: result.message,
+      error: result.error || null,
+      completedAt
+    };
+    tab.operations.running = [];
+    tab.operations.queued = [];
+    tab.operations.lastCompleted = {
+      id: `${tab.id}:clone:completed`,
+      repositoryId: tab.id,
+      kind: "clone",
+      action: "clone",
+      status: result.ok ? "succeeded" : "failed",
+      queuedAt: tab.openedAt,
+      startedAt: null,
+      completedAt,
+      error: result.error || null
+    };
+    tab.operations.completed = [tab.operations.lastCompleted, ...tab.operations.completed].slice(0, 8);
+    if (!result.ok) {
+      tab.health = "error";
+      tab.error = result.error || {
+        kind: "clone-error",
+        message: result.message || "Clone failed."
+      };
+      tab.lastRefresh = {
+        ...tab.lastRefresh,
+        status: "failed",
+        completedAt
+      };
+    }
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Clone completed." : "Clone failed."));
     render();
   }
 
@@ -879,7 +1385,7 @@
     return {
       ok: Boolean(result.ok),
       action: result.action || command.action || "git",
-      command: args.length > 0 ? `git ${args.join(" ")}` : "git",
+      command: command.display || (args.length > 0 ? `git ${args.join(" ")}` : "git"),
       stdout: result.stdout || "",
       stderr: result.stderr || "",
       exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
@@ -900,6 +1406,14 @@
 
   function confirmAmend() {
     return window.confirm("Amend rewrites the most recent commit on this branch.\n\nContinue only if you intend to change history.");
+  }
+
+  function confirmBranchDelete(name) {
+    return window.confirm(`Delete local branch '${name}'?\n\nGit will refuse the deletion if it is not fully merged.`);
+  }
+
+  function confirmStashDrop(ref) {
+    return window.confirm(`Delete stash '${ref}'?\n\nThis removes the saved stash entry.`);
   }
 
   function applyRepositoryWatchError(tabId, error) {
@@ -1069,6 +1583,102 @@
     return null;
   }
 
+  function resolveRepositoryBranchActionRunner() {
+    if (window.SourceCompanionRepositoryBranchActions && typeof window.SourceCompanionRepositoryBranchActions.runBranchAction === "function") {
+      return window.SourceCompanionRepositoryBranchActions.runBranchAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-branch-actions", "./src/repository-branch-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runBranchAction === "function") {
+          return loaded.runBranchAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositorySyncActionRunner() {
+    if (window.SourceCompanionRepositorySyncActions && typeof window.SourceCompanionRepositorySyncActions.runSyncAction === "function") {
+      return window.SourceCompanionRepositorySyncActions.runSyncAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-sync-actions", "./src/repository-sync-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runSyncAction === "function") {
+          return loaded.runSyncAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryStashActionRunner() {
+    if (window.SourceCompanionRepositoryStashActions && typeof window.SourceCompanionRepositoryStashActions.runStashAction === "function") {
+      return window.SourceCompanionRepositoryStashActions.runStashAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-stash-actions", "./src/repository-stash-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runStashAction === "function") {
+          return loaded.runStashAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryCloneActionRunner() {
+    if (window.SourceCompanionRepositoryCloneActions && typeof window.SourceCompanionRepositoryCloneActions.runCloneAction === "function") {
+      return window.SourceCompanionRepositoryCloneActions.runCloneAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-clone-actions", "./src/repository-clone-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runCloneAction === "function") {
+          return loaded.runCloneAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
   function createId() {
     return crypto.randomUUID ? crypto.randomUUID() : `repo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
@@ -1124,6 +1734,40 @@
     return github.authenticated ? `${repo} authenticated` : repo;
   }
 
+  function currentBranchName(git) {
+    const branch = git && git.branch ? git.branch : null;
+    if (!branch || branch.detached) return "";
+    return clean(branch.name);
+  }
+
+  function primaryRemoteName(git) {
+    if (git && git.remote && clean(git.remote.name)) return clean(git.remote.name);
+    const remotes = git && Array.isArray(git.remotes) ? git.remotes : [];
+    const origin = remotes.find((remote) => clean(remote.name) === "origin");
+    const remote = origin || remotes[0];
+    return remote ? clean(remote.name) : "";
+  }
+
+  function upstreamParts(git) {
+    const upstream = git && git.upstream ? git.upstream : null;
+    if (!upstream) return null;
+
+    if (clean(upstream.remoteName) && clean(upstream.branchName)) {
+      return {
+        remote: clean(upstream.remoteName),
+        branch: clean(upstream.branchName)
+      };
+    }
+
+    const name = clean(upstream.name || upstream.ref);
+    if (!name || !name.includes("/")) return null;
+    const [remote, ...branchParts] = name.split("/");
+    const branch = branchParts.join("/");
+    if (!remote || !branch) return null;
+
+    return { remote, branch };
+  }
+
   function changesLabel(git) {
     const staged = countFiles(git.staged);
     const unstaged = countFiles(git.unstaged);
@@ -1162,6 +1806,10 @@
 
     return `
       <section class="source-control" aria-label="Source control changes">
+        ${renderClonePanel(repo)}
+        ${renderBranchPanel(repo)}
+        ${renderSyncPanel(repo)}
+        ${renderStashPanel(repo)}
         ${renderCommitBox(repo)}
         <div class="source-control-layout">
           <div class="change-lists">
@@ -1176,9 +1824,183 @@
     `;
   }
 
+  function renderClonePanel(repo) {
+    if (!repo.cloneAction && !repo.cloneRequest) return "";
+    const status = repo.cloneAction || {
+      status: "idle",
+      message: "Clone is ready."
+    };
+    const request = repo.cloneRequest || {};
+
+    return `
+      <section class="sync-panel" aria-label="Clone progress">
+        <div class="sync-panel-heading">
+          <div>
+            <h3>Clone</h3>
+            <p>${escapeHtml(request.url || "Repository cloned")} / ${escapeHtml(repo.path)}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <div class="sync-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
+  function renderSyncPanel(repo) {
+    const running = repo.syncAction && repo.syncAction.status === "running";
+    const actions = ["fetch", "pull", "push", "sync", "publish-branch"];
+    const status = repo.syncAction ? repo.syncAction : {
+      status: isSyncActionAvailable(repo) ? "idle" : "blocked",
+      message: isSyncActionAvailable(repo) ? "Sync actions are ready." : "Open a Git repository with a remote before syncing."
+    };
+
+    return `
+      <section class="sync-panel" aria-label="Remote sync actions">
+        <div class="sync-panel-heading">
+          <div>
+            <h3>Remote Sync</h3>
+            <p>${escapeHtml(remoteLabel(repo.git.remote))} / ${escapeHtml(upstreamLabel(repo.git.upstream))} / ${escapeHtml(divergenceLabel(repo.git.divergence))}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <div class="sync-actions">
+          ${actions.map((action) => {
+            const validation = validateSyncAction(repo, action);
+            return `
+              <button class="button" type="button" data-sync-action="${escapeHtml(action)}" ${validation.ok && !running ? "" : "disabled"} title="${escapeHtml(validation.message)}">
+                ${escapeHtml(syncActionLabel(action))}
+              </button>
+            `;
+          }).join("")}
+        </div>
+        <div class="sync-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
+  function renderStashPanel(repo) {
+    const stashes = Array.isArray(repo.git.stashes) ? repo.git.stashes : [];
+    const running = repo.stashAction && repo.stashAction.status === "running";
+    const pushValidation = validateStashAction(repo, "push", {});
+    const status = repo.stashAction ? repo.stashAction : {
+      status: isStashActionAvailable(repo) ? "idle" : "blocked",
+      message: isStashActionAvailable(repo) ? "Stash actions are ready." : "Open a Git repository before using stashes."
+    };
+    const blocked = running || !isStashActionAvailable(repo);
+
+    return `
+      <section class="stash-panel" aria-label="Stash actions">
+        <div class="stash-panel-heading">
+          <div>
+            <h3>Stash</h3>
+            <p>${stashes.length} saved / ${escapeHtml(changesLabel(repo.git))}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <form class="stash-form" data-stash-form data-stash-action="push">
+          <label>
+            Message
+            <input name="message" autocomplete="off" placeholder="optional stash note" ${blocked ? "disabled" : ""}>
+          </label>
+          <label class="checkbox-label">
+            <input name="includeUntracked" type="checkbox" ${blocked ? "disabled" : ""}>
+            Include untracked
+          </label>
+          <button class="button" type="submit" ${pushValidation.ok && !running ? "" : "disabled"} title="${escapeHtml(pushValidation.message)}">Stash changes</button>
+          <button class="button" type="button" data-stash-action="list" ${blocked ? "disabled" : ""}>Refresh list</button>
+        </form>
+        <div class="stash-list">
+          ${stashes.length === 0 ? '<div class="stash-empty">No stashes.</div>' : stashes.map((stash) => renderStashItem(stash, running)).join("")}
+        </div>
+        <div class="stash-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
+  function renderStashItem(stash, running) {
+    const ref = stash.ref || "";
+    const summary = stash.message || stash.summary || ref || "Stash entry";
+    const detail = stash.branch ? `On ${stash.branch}` : stash.summary || ref;
+
+    return `
+      <article class="stash-item">
+        <div class="stash-text">
+          <strong>${escapeHtml(ref || "stash")}</strong>
+          <span>${escapeHtml(summary)}</span>
+          <small>${escapeHtml(detail)}</small>
+        </div>
+        <div class="stash-actions">
+          <button class="button" type="button" data-stash-action="apply" data-stash-ref="${escapeHtml(ref)}" ${ref && !running ? "" : "disabled"}>Apply</button>
+          <button class="button danger" type="button" data-stash-action="drop" data-stash-ref="${escapeHtml(ref)}" ${ref && !running ? "" : "disabled"}>Delete</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderBranchPanel(repo) {
+    const disabled = !isBranchActionAvailable(repo);
+    const running = repo.branchAction && repo.branchAction.status === "running";
+    const blocked = disabled || running;
+    const status = repo.branchAction ? repo.branchAction : {
+      status: disabled ? "blocked" : "idle",
+      message: disabled ? "Open a Git repository before running branch actions." : "Branch actions are ready."
+    };
+
+    return `
+      <section class="branch-panel" aria-label="Branch actions">
+        <div class="branch-panel-heading">
+          <div>
+            <h3>Branch</h3>
+            <p>${escapeHtml(branchLabel(repo.git.branch))} / ${escapeHtml(upstreamLabel(repo.git.upstream))} / ${escapeHtml(divergenceLabel(repo.git.divergence))}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <div class="branch-grid">
+          <form class="branch-form" data-branch-form data-branch-action="create">
+            <label>
+              New branch
+              <input name="name" autocomplete="off" placeholder="feature/name" ${blocked ? "disabled" : ""}>
+            </label>
+            <label>
+              Start point
+              <input name="startPoint" autocomplete="off" placeholder="${escapeHtml(branchLabel(repo.git.branch))}" ${blocked ? "disabled" : ""}>
+            </label>
+            <button class="button" type="submit" ${blocked ? "disabled" : ""}>Create</button>
+          </form>
+          <form class="branch-form" data-branch-form data-branch-action="switch">
+            <label>
+              Switch to
+              <input name="name" autocomplete="off" placeholder="main" ${blocked ? "disabled" : ""}>
+            </label>
+            <button class="button" type="submit" ${blocked ? "disabled" : ""}>Switch</button>
+          </form>
+          <form class="branch-form" data-branch-form data-branch-action="checkout-remote">
+            <label>
+              Remote branch
+              <input name="remoteBranch" autocomplete="off" placeholder="origin/feature" ${blocked ? "disabled" : ""}>
+            </label>
+            <label>
+              Local name
+              <input name="localName" autocomplete="off" placeholder="optional" ${blocked ? "disabled" : ""}>
+            </label>
+            <button class="button" type="submit" ${blocked ? "disabled" : ""}>Check out</button>
+          </form>
+          <form class="branch-form danger-zone" data-branch-form data-branch-action="delete">
+            <label>
+              Delete local branch
+              <input name="name" autocomplete="off" placeholder="old-branch" ${blocked ? "disabled" : ""}>
+            </label>
+            <button class="button danger" type="submit" ${blocked ? "disabled" : ""}>Delete</button>
+          </form>
+        </div>
+        <div class="branch-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
   function renderCommitBox(repo) {
     const validation = validateCommitAction(repo, "commit");
-    const running = repo.commitAction && repo.commitAction.status === "running";
+    const running = repo.commitAction && repo.commitAction.status === "running" || repo.syncAction && repo.syncAction.status === "running";
     const stagedCount = countFiles(repo.git.staged);
     const status = repo.commitAction ? repo.commitAction : {
       status: validation.ok ? "idle" : "blocked",
@@ -1197,6 +2019,7 @@
             <summary class="button">Variants</summary>
             <div class="commit-menu-list">
               <button class="commit-menu-item" type="button" data-commit-action="commit-staged" ${running ? "disabled" : ""}>Commit staged changes</button>
+              <button class="commit-menu-item" type="button" data-commit-action="commit-and-push" ${running ? "disabled" : ""}>Commit and Push</button>
               <button class="commit-menu-item history" type="button" data-commit-action="amend" ${running ? "disabled" : ""}>Amend Commit</button>
             </div>
           </details>
@@ -1409,7 +2232,7 @@
     return `
       <section class="git-output" aria-label="Git output">
         <h3>Git Output</h3>
-        ${output.length === 0 ? '<div class="git-output-empty">No Git file actions have run in this tab.</div>' : `
+        ${output.length === 0 ? '<div class="git-output-empty">No Git actions have run in this tab.</div>' : `
           <div class="git-output-list">
             ${output.map(renderGitOutputEntry).join("")}
           </div>
@@ -1462,6 +2285,9 @@
     if (repo.commitAction && repo.commitAction.status === "running") {
       return { ok: false, message: "Commit is running." };
     }
+    if (repo.syncAction && repo.syncAction.status === "running") {
+      return { ok: false, message: "Sync action is running." };
+    }
     if (!clean(repo.commitMessage)) {
       return { ok: false, message: "Enter a commit message before committing." };
     }
@@ -1482,6 +2308,7 @@
   function commitActionRunningLabel(action) {
     if (action === "amend") return "Amending commit.";
     if (action === "commit-staged") return "Committing staged changes.";
+    if (action === "commit-and-push") return "Committing staged changes and pushing.";
     return "Creating commit.";
   }
 
@@ -1546,6 +2373,172 @@
     return "Git action";
   }
 
+  function branchActionRunningLabel(action) {
+    if (action === "create") return "Creating branch.";
+    if (action === "switch") return "Switching branch.";
+    if (action === "delete") return "Deleting branch.";
+    if (action === "checkout-remote") return "Checking out remote branch.";
+    return "Running branch action.";
+  }
+
+  function syncActionLabel(action) {
+    if (action === "fetch") return "Fetch";
+    if (action === "pull") return "Pull";
+    if (action === "push") return "Push";
+    if (action === "sync") return "Sync";
+    if (action === "commit-and-push") return "Commit and Push";
+    if (action === "publish-branch") return "Publish Branch";
+    return "Sync";
+  }
+
+  function syncActionRunningLabel(action) {
+    if (action === "fetch") return "Fetching remote refs.";
+    if (action === "pull") return "Pulling upstream changes.";
+    if (action === "push") return "Pushing local commits.";
+    if (action === "sync") return "Fetching, pulling, then pushing.";
+    if (action === "commit-and-push") return "Committing staged changes and pushing.";
+    if (action === "publish-branch") return "Publishing branch upstream.";
+    return "Running sync action.";
+  }
+
+  function stashActionRunningLabel(action) {
+    if (action === "list") return "Refreshing stash list.";
+    if (action === "push") return "Stashing changes.";
+    if (action === "apply") return "Applying stash.";
+    if (action === "drop") return "Deleting stash.";
+    return "Running stash action.";
+  }
+
+  function validateSyncAction(repo, action) {
+    if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
+      return { ok: false, message: "Open a Git repository before syncing." };
+    }
+    if (repo.syncAction && repo.syncAction.status === "running") {
+      return { ok: false, message: "Sync action is running." };
+    }
+    if (repo.branchAction && repo.branchAction.status === "running") {
+      return { ok: false, message: "Branch action is running." };
+    }
+    if (repo.commitAction && repo.commitAction.status === "running") {
+      return { ok: false, message: "Commit is running." };
+    }
+
+    const remote = primaryRemoteName(repo.git);
+    if (!remote) {
+      return { ok: false, message: "Configure a remote before running sync actions." };
+    }
+
+    if (action === "fetch") {
+      return { ok: true, message: `Ready to fetch ${remote}.` };
+    }
+
+    const branch = currentBranchName(repo.git);
+    if (!branch) {
+      return { ok: false, message: "Check out a local branch before running this sync action." };
+    }
+
+    if (action === "publish-branch") {
+      return { ok: true, message: `Ready to publish ${branch} to ${remote}.` };
+    }
+
+    if (repo.health === "conflict" || countFiles(repo.git.conflicted) > 0) {
+      return { ok: false, message: "Resolve conflicts before pulling, syncing, or committing and pushing." };
+    }
+
+    const upstream = upstreamParts(repo.git);
+    if (!upstream) {
+      return { ok: false, message: "Publish this branch or set an upstream before pulling, pushing, or syncing." };
+    }
+
+    if (action === "commit-and-push") {
+      const commitValidation = validateCommitAction(repo, action);
+      if (!commitValidation.ok) return commitValidation;
+      return { ok: true, message: `Ready to commit staged changes and push ${branch}.` };
+    }
+
+    if (action === "pull") return { ok: true, message: `Ready to pull ${upstream.remote}/${upstream.branch}.` };
+    if (action === "push") return { ok: true, message: `Ready to push ${branch} to ${upstream.remote}.` };
+    if (action === "sync") return { ok: true, message: `Ready to fetch, pull, and push ${branch}.` };
+
+    return { ok: false, message: "Unknown sync action." };
+  }
+
+  function validateStashAction(repo, action, values = {}) {
+    if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
+      return { ok: false, message: "Open a Git repository before using stashes." };
+    }
+    if (repo.stashAction && repo.stashAction.status === "running") {
+      return { ok: false, message: "Stash action is running." };
+    }
+    if (repo.branchAction && repo.branchAction.status === "running") {
+      return { ok: false, message: "Branch action is running." };
+    }
+    if (repo.commitAction && repo.commitAction.status === "running") {
+      return { ok: false, message: "Commit is running." };
+    }
+    if (repo.syncAction && repo.syncAction.status === "running") {
+      return { ok: false, message: "Sync action is running." };
+    }
+
+    if (action === "list") {
+      return { ok: true, message: "Ready to refresh stashes." };
+    }
+
+    if (action === "push") {
+      if (repo.health === "conflict" || countFiles(repo.git.conflicted) > 0) {
+        return { ok: false, message: "Resolve conflicts before stashing changes." };
+      }
+      const changeCount = countFiles(repo.git.staged) + countFiles(repo.git.unstaged) + countFiles(repo.git.untracked);
+      if (changeCount === 0) {
+        return { ok: false, message: "No local changes are available to stash." };
+      }
+      return { ok: true, message: "Ready to stash local changes." };
+    }
+
+    if (action === "apply" || action === "drop") {
+      if (!clean(values.ref)) {
+        return { ok: false, message: "Choose a stash entry first." };
+      }
+      return { ok: true, message: action === "apply" ? "Ready to apply stash." : "Ready to delete stash." };
+    }
+
+    return { ok: false, message: "Unknown stash action." };
+  }
+
+  function branchActionTarget(action, values) {
+    if (action === "checkout-remote") return clean(values.localName) || clean(values.remoteBranch) || null;
+    return clean(values.name) || null;
+  }
+
+  function isBranchActionAvailable(repo) {
+    return Boolean(repo && repo.kind !== "no-folder" && repo.kind !== "folder-without-git");
+  }
+
+  function isSyncActionAvailable(repo) {
+    return Boolean(repo &&
+      repo.kind !== "no-folder" &&
+      repo.kind !== "folder-without-git" &&
+      primaryRemoteName(repo.git));
+  }
+
+  function isStashActionAvailable(repo) {
+    return Boolean(repo && repo.kind !== "no-folder" && repo.kind !== "folder-without-git");
+  }
+
+  function branchStatusLabel(status) {
+    if (!status) return "Ready";
+    if (status.status === "running") return "Running";
+    if (status.status === "failed" || status.status === "blocked") return "Error";
+    return "Ready";
+  }
+
+  function branchStatusClass(status) {
+    if (!status) return "ready";
+    if (status.status === "running") return "warning";
+    if (status.status === "failed" || status.status === "blocked") return "error";
+    return "ready";
+  }
+
   function setMessage(kind, text) {
     state.message = { kind, text };
   }
@@ -1564,7 +2557,8 @@
       staged: Array.isArray(source.staged) ? source.staged : files.filter((file) => file.staged),
       unstaged: Array.isArray(source.unstaged) ? source.unstaged : files.filter((file) => file.unstaged),
       untracked: Array.isArray(source.untracked) ? source.untracked : files.filter((file) => file.untracked),
-      conflicted: Array.isArray(source.conflicted) ? source.conflicted : files.filter((file) => file.conflicted)
+      conflicted: Array.isArray(source.conflicted) ? source.conflicted : files.filter((file) => file.conflicted),
+      stashes: Array.isArray(source.stashes) ? source.stashes : []
     };
   }
 
@@ -1608,8 +2602,9 @@
   }
 
   function isCloneUrl(url) {
-    return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+(?:\.git)?$/i.test(url) ||
+    return /^https:\/\/[^\s]+$/i.test(url) ||
       /^git@github\.com:[^/\s]+\/[^/\s]+(?:\.git)?$/i.test(url) ||
+      /^git@[A-Za-z0-9_.-]+:[^\s]+$/i.test(url) ||
       /^ssh:\/\/.+/.test(url);
   }
 

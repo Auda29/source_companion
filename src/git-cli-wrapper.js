@@ -220,10 +220,17 @@ function buildCommitArgs(options) {
 }
 
 function buildBranchArgs(options) {
-  assertKnownOptions(options, ["mode", "name", "startPoint", "force"]);
+  assertKnownOptions(options, ["mode", "name", "startPoint", "force", "all", "remote"]);
   const mode = options.mode || "list";
 
-  if (mode === "list") return ["branch", "--list"];
+  if (mode === "list") {
+    return [
+      "branch",
+      "--list",
+      options.all ? "--all" : null,
+      options.remote ? "--remotes" : null
+    ].filter(Boolean);
+  }
   if (mode === "create") return ["branch", requireRef(options.name, "name"), optionalRef(options.startPoint)].filter(Boolean);
   if (mode === "delete") return ["branch", options.force ? "-D" : "-d", requireRef(options.name, "name")];
 
