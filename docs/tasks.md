@@ -23,31 +23,34 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 
 ### T1 - Produktquelle und Scope-Gates festziehen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: -
 - Definition of Done: README oder ein Architektur-Startdokument verweist klar auf `docs/plan.md` als Produktquelle; Nicht-Ziele wie Editor, Terminal, Agent, Workspaces, GitLab/Bitbucket und Force Push sind in einem Scope-Gate dokumentiert; neue Features muessen am Git/GitHub-Versionskontroll-Gate gemessen werden.
 - Implementierungsnotiz: Keine Produktentscheidungen neu erfinden. Die Regeln aus `docs/plan.md` Abschnitt 2, 3, 8, 9 und 12 uebernehmen.
-- Review-Ergebnis: -
+- Notiz: README verweist jetzt auf `docs/plan.md` als verbindliche Produktquelle; `docs/scope-gates.md` dokumentiert Git/GitHub-Versionskontroll-Gate, Nicht-Ziele, Backend-Scope und Sicherheitsregeln.
+- Review-Ergebnis: Bestanden am 2026-06-03. README verweist klar auf `docs/plan.md`; `docs/scope-gates.md` dokumentiert Git/GitHub-Gate, Nicht-Ziele, Backend-Scope und Sicherheitsregeln gemaess Produktplan.
 - Offene Review-Punkte: -
 
 ### T2 - Architektur-Startdokument fuer Kernkomponenten anlegen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T1`
 - Definition of Done: Ein technisches Startdokument benennt UI-Schichten, Git CLI Wrapper, GitHub API Client, Dateiwatcher, lokalen State Store und Auth/Token-Verwaltung; es beschreibt pro Komponente Verantwortung, erlaubte Eingaben, Fehlerausgaben und ausgeschlossene Funktionen.
 - Implementierungsnotiz: Architektur bleibt eng auf Source-Control-Funktionen. Keine Plugin-Plattform, kein Terminal, kein freier Command Runner.
-- Review-Ergebnis: -
+- Notiz: `docs/architecture.md` beschreibt UI-Schichten, Repository-Kontext, Git Wrapper, Operation Queue, GitHub Client, Dateiwatcher, lokalen State Store sowie Auth/Token-Verwaltung mit Eingaben, Fehlern und ausgeschlossenen Funktionen.
+- Review-Ergebnis: Bestanden am 2026-06-03. `docs/architecture.md` benennt die geforderten UI- und Backend-Komponenten und beschreibt jeweils Verantwortung, erlaubte Eingaben, Fehlerausgaben und ausgeschlossene Funktionen.
 - Offene Review-Punkte: -
 
 ### T3 - Repository-Kontextmodell definieren
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T2`
 - Definition of Done: Ein Repository-Kontextmodell ist dokumentiert oder typisiert und enthaelt Pfad, Anzeigenamen, Git-Status, Branch, Remote, Upstream, ahead/behind, laufende Operationen, Fehlerzustand und GitHub-Verknuepfung; mehrere Kontexte koennen ohne globale Vermischung existieren.
 - Implementierungsnotiz: Jeder Tab repraesentiert genau einen Repository-Kontext. Keine Workspaces modellieren.
+- Notiz: `docs/repository-context-model.md` dokumentiert ein typisiertes RepositoryContext-Modell mit Pfad, Anzeigenamen, Git-Zustand, Branch, Remote, Upstream, ahead/behind, laufenden Operationen, Fehlern, GitHub-Verknuepfung und Isolationsregeln pro Tab.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

@@ -13,6 +13,10 @@ Das Ziel ist bewusst eng:
 
 Source Companion soll Cursor nur fuer Git ersetzen.
 
+## Produktquelle
+
+`docs/plan.md` ist die verbindliche Produktquelle fuer Source Companion. Neue Features muessen am Scope-Gate in `docs/scope-gates.md` gemessen werden, bevor sie in Planung oder Implementierung aufgenommen werden.
+
 ## Produktziel
 
 Die erste vollstaendige Produktversion soll mehrere Repositories parallel in Tabs oeffnen, Git-Zustand anzeigen, Aenderungen pruefbar machen und normale Git/GitHub-Versionskontrollschritte ausfuehren.
@@ -50,6 +54,7 @@ Nicht Teil des Produktziels:
 ## Planung
 
 - Produktplan: [docs/plan.md](docs/plan.md)
+- Scope-Gates: [docs/scope-gates.md](docs/scope-gates.md)
 - Aufgabenliste: [docs/tasks.md](docs/tasks.md)
 - Brainstorming: [docs/brainstorm.md](docs/brainstorm.md)
 
