@@ -91,22 +91,23 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T7 - Git Operation Queue pro Repository implementieren
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T3`, `T6`
 - Definition of Done: Git-Operationen werden pro Repository kontrolliert serialisiert; parallele Operationen in verschiedenen Repositories bleiben moeglich; laufende, erfolgreiche, fehlgeschlagene und abgebrochene Operationen sind im State unterscheidbar.
 - Implementierungsnotiz: Lange Operationen sollen abbrechbar vorbereitet werden. Queue darf Status-Refreshes nicht dauerhaft verhungern lassen.
 - Notiz: `src/git-operation-queue.js` fuehrt eine per-Repository serialisierte Queue mit paralleler Ausfuehrung verschiedener Repositories, AbortController-Unterstuetzung, Snapshots fuer queued/running/completed/lastCompleted und Refresh-Priorisierung ein; `src/main.js` nutzt kompatible Operation-Statusfelder fuer vorbereitete Clone/Init-Einstiege.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-03. `src/git-operation-queue.js` serialisiert Operationen pro Repository, erlaubt parallele Ausfuehrung verschiedener Repositories, unterscheidet queued/running/succeeded/failed/aborted im Snapshot und priorisiert Refresh-Operationen; die Queue-Tests bestanden im fokussierten Node-Check.
 - Offene Review-Punkte: -
 
 ### T8 - Repository-Erkennung und Git-Zustandsmodell umsetzen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T7`
 - Definition of Done: App erkennt kein Ordner offen, Ordner ohne Git, normales Git-Repo, Repo mit Remote, GitHub-Remote, GitHub-authentifiziert, Operation laeuft, Konflikt und Fehler; Branch, Upstream, ahead/behind, staged, unstaged, untracked und conflicted Dateien werden geladen.
 - Implementierungsnotiz: Zustaende explizit modellieren, nicht aus verstreuten UI-Flags ableiten.
+- Notiz: Review-Punkt adressiert: `tests/repository-state.test.js` erwartet fuer nicht-GitHub scp-style Remotes jetzt konsistent `ssh` und prueft, dass keine GitHub-Zuordnung gesetzt wird; fokussierter Node-Check mit Preserve-Symlink-Flags bestanden.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

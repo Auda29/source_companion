@@ -381,6 +381,9 @@
   function repositoryKindLabel(kind) {
     if (kind === "folder-without-git") return "Folder without Git";
     if (kind === "no-folder") return "No folder";
+    if (kind === "remote-repository") return "Git repository with remote";
+    if (kind === "github-remote") return "GitHub remote";
+    if (kind === "github-authenticated") return "GitHub authenticated";
     return "Git repository";
   }
 
