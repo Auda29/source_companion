@@ -6,7 +6,10 @@ const path = require("node:path");
 const ALLOWED_GIT_ACTIONS = Object.freeze([
   "status",
   "diff",
+  "apply",
   "add",
+  "clean",
+  "rm",
   "restore",
   "commit",
   "branch",
@@ -24,7 +27,10 @@ const ALLOWED_GIT_ACTIONS = Object.freeze([
 const COMMAND_BUILDERS = Object.freeze({
   status: buildStatusArgs,
   diff: buildDiffArgs,
+  apply: buildApplyArgs,
   add: buildAddArgs,
+  clean: buildCleanArgs,
+  rm: buildRmArgs,
   restore: buildRestoreArgs,
   commit: buildCommitArgs,
   branch: buildBranchArgs,
@@ -58,13 +64,15 @@ function buildGitArgs(action, options = {}) {
   return builder(options);
 }
 
-function runGitCommand({ action, repositoryPath, options = {}, signal } = {}) {
+function runGitCommand({ action, repositoryPath, options = {}, input, signal } = {}) {
   let args;
   let cwd;
+  let stdin;
 
   try {
     args = buildGitArgs(action, options);
     cwd = resolveWorkingDirectory(action, repositoryPath, options);
+    stdin = normalizeCommandInput(input);
   } catch (error) {
     return Promise.resolve(createInvalidResult(action, error));
   }
@@ -87,6 +95,11 @@ function runGitCommand({ action, repositoryPath, options = {}, signal } = {}) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
+
+    if (child.stdin) {
+      child.stdin.on("error", () => {});
+      child.stdin.end(stdin);
+    }
 
     child.on("error", (error) => {
       const result = {
@@ -155,9 +168,35 @@ function buildDiffArgs(options) {
   return ["diff", options.staged ? "--staged" : null, ...pathspecArgs(options.pathspecs)].filter(Boolean);
 }
 
+function buildApplyArgs(options) {
+  assertKnownOptions(options, ["cached", "reverse", "check", "whitespaceError"]);
+  return [
+    "apply",
+    options.cached ? "--cached" : null,
+    options.reverse ? "--reverse" : null,
+    options.check ? "--check" : null,
+    options.whitespaceError ? "--whitespace=error" : null
+  ].filter(Boolean);
+}
+
 function buildAddArgs(options) {
   assertKnownOptions(options, ["pathspecs"]);
   return ["add", ...pathspecArgs(requireNonEmptyArray(options.pathspecs, "pathspecs"))];
+}
+
+function buildCleanArgs(options) {
+  assertKnownOptions(options, ["pathspecs"]);
+  return ["clean", "--force", ...pathspecArgs(requireNonEmptyArray(options.pathspecs, "pathspecs"))];
+}
+
+function buildRmArgs(options) {
+  assertKnownOptions(options, ["cached", "force", "pathspecs"]);
+  return [
+    "rm",
+    options.cached ? "--cached" : null,
+    options.force ? "--force" : null,
+    ...pathspecArgs(requireNonEmptyArray(options.pathspecs, "pathspecs"))
+  ].filter(Boolean);
 }
 
 function buildRestoreArgs(options) {
@@ -341,6 +380,14 @@ function normalizeAbsolutePath(value, name) {
     throw new GitWrapperError("invalid-arguments", `${name} must be an absolute path.`);
   }
   return normalized;
+}
+
+function normalizeCommandInput(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") {
+    throw new GitWrapperError("invalid-arguments", "input must be a string.");
+  }
+  return value;
 }
 
 function normalizeProcessError(error, stdout, stderr) {

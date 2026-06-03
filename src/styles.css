@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -125,6 +126,20 @@ input {
 
 .button.primary:hover {
   background: var(--accent-strong);
+}
+
+.button.danger {
+  border-color: #efb3b3;
+  color: var(--danger);
+}
+
+.button.danger:hover {
+  background: var(--danger-bg);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .icon-button {
@@ -391,17 +406,143 @@ input {
 .source-control {
   max-width: 1120px;
   display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
   gap: 16px;
   margin-top: 18px;
+}
+
+.source-control-layout {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 16px;
 }
 
 .change-lists,
 .change-detail,
 .change-bucket,
 .change-list,
-.change-preview {
+.change-preview,
+.commit-box {
   min-width: 0;
+}
+
+.commit-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.commit-message-label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.commit-message-label textarea {
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.commit-message-label textarea:focus {
+  outline: 2px solid rgb(36 107 107 / 0.2);
+  border-color: var(--accent);
+}
+
+.commit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.commit-menu {
+  position: relative;
+}
+
+.commit-menu summary {
+  display: inline-grid;
+  align-items: center;
+  list-style: none;
+}
+
+.commit-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.commit-menu-list {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 220px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgb(31 41 51 / 0.12);
+}
+
+.commit-menu-item {
+  min-height: 34px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.commit-menu-item:hover {
+  background: var(--surface-alt);
+}
+
+.commit-menu-item.history {
+  color: var(--danger);
+}
+
+.commit-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commit-status {
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commit-status.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.commit-status.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.commit-status.running {
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .change-lists {
@@ -561,6 +702,60 @@ input {
   font-size: 12px;
 }
 
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hunk-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.hunk-action-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: var(--surface-alt);
+}
+
+.hunk-action-row span {
+  overflow: hidden;
+  color: var(--muted);
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-action-status,
+.file-action-note {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.file-action-status.running,
+.file-action-note {
+  background: var(--surface-alt);
+  color: var(--muted);
+}
+
+.file-action-status.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.file-action-status.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
 .diff-meta {
   color: var(--muted);
   font-size: 12px;
@@ -606,6 +801,78 @@ input {
 .diff-line.removed {
   color: var(--danger);
   background: var(--danger-bg);
+}
+
+.git-output {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.git-output h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.git-output-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.git-output-list {
+  display: grid;
+  gap: 8px;
+}
+
+.git-output-entry {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid var(--success);
+  padding: 8px 10px;
+  background: var(--success-bg);
+}
+
+.git-output-entry.error {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.git-output-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.git-output-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.git-output-meta span,
+.git-output-message {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.git-output-entry pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgb(255 255 255 / 0.72);
+  color: var(--text);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
 }
 
 .empty-list {
@@ -720,7 +987,7 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .source-control {
+  .source-control-layout {
     grid-template-columns: 1fr;
   }
 }

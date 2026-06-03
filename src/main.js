@@ -9,6 +9,9 @@
     message: null,
     repositoryStateLoader: resolveRepositoryStateLoader(),
     repositoryDiffLoader: resolveRepositoryDiffLoader(),
+    repositoryFileActionRunner: resolveRepositoryFileActionRunner(),
+    repositoryHunkActionRunner: resolveRepositoryHunkActionRunner(),
+    repositoryCommitActionRunner: resolveRepositoryCommitActionRunner(),
     repositoryStatusWatcher: null
   };
   state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
@@ -349,6 +352,41 @@
         render();
       });
     });
+
+    workspaceContent.querySelectorAll("[data-file-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runSelectedFileAction(active.id, button.dataset.fileAction);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-hunk-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runSelectedHunkAction(active.id, button.dataset.hunkAction, button.dataset.hunkIndex);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-commit-form]").forEach((form) => {
+      const textarea = form.querySelector("[data-commit-message]");
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        runRepositoryCommitAction(active.id, "commit");
+      });
+      if (textarea) {
+        textarea.addEventListener("input", () => {
+          const tab = state.tabs.find((item) => item.id === active.id);
+          if (!tab) return;
+          tab.commitMessage = textarea.value;
+          syncCommitControls(form, tab);
+        });
+      }
+      syncCommitControls(form, active);
+    });
+
+    workspaceContent.querySelectorAll("[data-commit-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runRepositoryCommitAction(active.id, button.dataset.commitAction);
+      });
+    });
   }
 
   function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
@@ -397,6 +435,10 @@
       },
       selectedChangeKey: null,
       diffPreview: null,
+      fileAction: null,
+      commitMessage: "",
+      commitAction: null,
+      gitOutput: [],
       watchHandle: null
     };
   }
@@ -569,6 +611,297 @@
     render();
   }
 
+  async function runSelectedFileAction(tabId, action) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const selected = selectedChange(tab, changeBuckets(tab.git));
+    if (!selected) return;
+
+    if (action === "discard" && !confirmDiscard(selected)) {
+      return;
+    }
+
+    tab.fileAction = {
+      status: "running",
+      action,
+      path: selected.file.path,
+      message: `${fileActionLabel(action)} ${selected.file.path}`
+    };
+    render();
+
+    const runFileAction = state.repositoryFileActionRunner;
+    if (!runFileAction) {
+      applyFileActionResult(tabId, {
+        ok: false,
+        action,
+        path: selected.file.path,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository file actions are not available in this runtime.",
+        error: {
+          kind: "repository-actions-unavailable",
+          message: "Repository file actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runFileAction({
+        repositoryPath: tab.path,
+        file: selected.file,
+        bucketId: selected.bucket.id,
+        action
+      });
+      applyFileActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated) {
+          updated.diffPreview = null;
+          refreshRepositoryState(tabId, `file-${action}`);
+        }
+      }
+    } catch (error) {
+      applyFileActionResult(tabId, {
+        ok: false,
+        action,
+        path: selected.file.path,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : `${fileActionLabel(action)} failed.`,
+        error: {
+          kind: "file-action-error",
+          message: error && error.message ? error.message : `${fileActionLabel(action)} failed.`
+        }
+      });
+    }
+  }
+
+  async function runSelectedHunkAction(tabId, action, hunkIndexValue) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const selected = selectedChange(tab, changeBuckets(tab.git));
+    const preview = selected ? selectedPreview(selected) : null;
+    if (!selected || !preview || preview.status !== "ready") return;
+
+    const hunkIndex = Number(hunkIndexValue);
+    tab.fileAction = {
+      status: "running",
+      action,
+      path: selected.file.path,
+      message: `${fileActionLabel(action)} ${selected.file.path}`
+    };
+    render();
+
+    const runHunkAction = state.repositoryHunkActionRunner;
+    if (!runHunkAction) {
+      applyFileActionResult(tabId, {
+        ok: false,
+        action,
+        path: selected.file.path,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository hunk actions are not available in this runtime.",
+        error: {
+          kind: "repository-hunk-actions-unavailable",
+          message: "Repository hunk actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runHunkAction({
+        repositoryPath: tab.path,
+        file: selected.file,
+        bucketId: selected.bucket.id,
+        action,
+        diff: preview.diff,
+        hunkIndex
+      });
+      applyFileActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated) {
+          updated.diffPreview = null;
+          refreshRepositoryState(tabId, action);
+        }
+      }
+    } catch (error) {
+      applyFileActionResult(tabId, {
+        ok: false,
+        action,
+        path: selected.file.path,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : `${fileActionLabel(action)} failed.`,
+        error: {
+          kind: "hunk-action-error",
+          message: error && error.message ? error.message : `${fileActionLabel(action)} failed.`
+        }
+      });
+    }
+  }
+
+  async function runRepositoryCommitAction(tabId, action) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const messageInput = workspaceContent.querySelector("[data-commit-message]");
+    if (messageInput) {
+      tab.commitMessage = messageInput.value;
+    }
+
+    const validation = validateCommitAction(tab, action);
+    if (!validation.ok) {
+      tab.commitAction = {
+        status: "failed",
+        action,
+        message: validation.message,
+        completedAt: new Date().toISOString()
+      };
+      render();
+      return;
+    }
+
+    if (action === "amend" && !confirmAmend()) {
+      return;
+    }
+
+    tab.commitAction = {
+      status: "running",
+      action,
+      message: commitActionRunningLabel(action),
+      completedAt: null
+    };
+    render();
+
+    const runCommitAction = state.repositoryCommitActionRunner;
+    if (!runCommitAction) {
+      applyCommitActionResult(tabId, {
+        ok: false,
+        action,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository commit actions are not available in this runtime.",
+        error: {
+          kind: "repository-commit-actions-unavailable",
+          message: "Repository commit actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runCommitAction({
+        repositoryPath: tab.path,
+        git: tab.git,
+        message: tab.commitMessage,
+        action
+      });
+      applyCommitActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated) {
+          updated.commitMessage = "";
+          updated.diffPreview = null;
+          refreshRepositoryState(tabId, action);
+        }
+      }
+    } catch (error) {
+      applyCommitActionResult(tabId, {
+        ok: false,
+        action,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Commit failed.",
+        error: {
+          kind: "commit-action-error",
+          message: error && error.message ? error.message : "Commit failed."
+        }
+      });
+    }
+  }
+
+  function applyCommitActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.commitAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Commit completed." : "Commit failed."));
+    render();
+  }
+
+  function applyFileActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.fileAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action,
+      path: result.path,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Git action completed." : "Git action failed."));
+    render();
+  }
+
+  function createGitOutputEntry(result) {
+    const command = result.command || {};
+    const args = command.args && command.args.length > 0
+      ? command.args
+      : [command.action || result.action].filter(Boolean);
+
+    return {
+      ok: Boolean(result.ok),
+      action: result.action || command.action || "git",
+      command: args.length > 0 ? `git ${args.join(" ")}` : "git",
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+      exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
+      message: result.message || "",
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+  }
+
+  function confirmDiscard(selected) {
+    const path = selected.file.oldPath ? `${selected.file.oldPath} -> ${selected.file.path}` : selected.file.path;
+    const detail = selected.bucket.id === "untracked"
+      ? "This will permanently remove the untracked file."
+      : "This will permanently discard local changes for this file.";
+
+    return window.confirm(`${detail}\n\n${path}`);
+  }
+
+  function confirmAmend() {
+    return window.confirm("Amend rewrites the most recent commit on this branch.\n\nContinue only if you intend to change history.");
+  }
+
   function applyRepositoryWatchError(tabId, error) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -655,6 +988,78 @@
         const loaded = require(candidate);
         if (loaded && typeof loaded.loadFileDiff === "function") {
           return loaded.loadFileDiff;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryFileActionRunner() {
+    if (window.SourceCompanionRepositoryFileActions && typeof window.SourceCompanionRepositoryFileActions.runFileAction === "function") {
+      return window.SourceCompanionRepositoryFileActions.runFileAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-file-actions", "./src/repository-file-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runFileAction === "function") {
+          return loaded.runFileAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryHunkActionRunner() {
+    if (window.SourceCompanionRepositoryHunkActions && typeof window.SourceCompanionRepositoryHunkActions.runHunkAction === "function") {
+      return window.SourceCompanionRepositoryHunkActions.runHunkAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-hunk-actions", "./src/repository-hunk-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runHunkAction === "function") {
+          return loaded.runHunkAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
+  function resolveRepositoryCommitActionRunner() {
+    if (window.SourceCompanionRepositoryCommitActions && typeof window.SourceCompanionRepositoryCommitActions.runCommitAction === "function") {
+      return window.SourceCompanionRepositoryCommitActions.runCommitAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-commit-actions", "./src/repository-commit-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runCommitAction === "function") {
+          return loaded.runCommitAction;
         }
       } catch {
         // Try the next runtime-specific path.
@@ -757,13 +1162,48 @@
 
     return `
       <section class="source-control" aria-label="Source control changes">
-        <div class="change-lists">
-          ${buckets.map((bucket) => renderChangeBucket(bucket, repo.selectedChangeKey)).join("")}
-        </div>
-        <div class="change-detail" aria-live="polite">
-          ${selected ? renderChangeDetail(selected) : renderNoSelectedChange(buckets)}
+        ${renderCommitBox(repo)}
+        <div class="source-control-layout">
+          <div class="change-lists">
+            ${buckets.map((bucket) => renderChangeBucket(bucket, repo.selectedChangeKey)).join("")}
+          </div>
+          <div class="change-detail" aria-live="polite">
+            ${selected ? renderChangeDetail(selected) : renderNoSelectedChange(buckets)}
+            ${renderGitOutput(repo)}
+          </div>
         </div>
       </section>
+    `;
+  }
+
+  function renderCommitBox(repo) {
+    const validation = validateCommitAction(repo, "commit");
+    const running = repo.commitAction && repo.commitAction.status === "running";
+    const stagedCount = countFiles(repo.git.staged);
+    const status = repo.commitAction ? repo.commitAction : {
+      status: validation.ok ? "idle" : "blocked",
+      message: validation.message
+    };
+
+    return `
+      <form class="commit-box" data-commit-form>
+        <label class="commit-message-label">
+          <span>Commit Message</span>
+          <textarea data-commit-message rows="3" autocomplete="off" placeholder="Describe the staged changes">${escapeHtml(repo.commitMessage || "")}</textarea>
+        </label>
+        <div class="commit-actions">
+          <button class="button primary" type="submit" data-commit-primary ${validation.ok && !running ? "" : "disabled"}>Commit</button>
+          <details class="commit-menu">
+            <summary class="button">Variants</summary>
+            <div class="commit-menu-list">
+              <button class="commit-menu-item" type="button" data-commit-action="commit-staged" ${running ? "disabled" : ""}>Commit staged changes</button>
+              <button class="commit-menu-item history" type="button" data-commit-action="amend" ${running ? "disabled" : ""}>Amend Commit</button>
+            </div>
+          </details>
+          <span class="commit-count">${stagedCount} staged</span>
+        </div>
+        <div class="commit-status ${commitStatusClass(status)}" data-commit-status>${escapeHtml(status.message || "")}</div>
+      </form>
     `;
   }
 
@@ -814,9 +1254,60 @@
             <p>${escapeHtml(selected.bucket.detailLabel)} / ${escapeHtml(file.status || "--")} / ${escapeHtml(changeTypeLabel(file))}</p>
           </div>
         </div>
+        ${renderFileActions(selected)}
         ${renderDiffBody(selected)}
       </section>
     `;
+  }
+
+  function renderFileActions(selected) {
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+    const actionState = active && active.fileAction ? active.fileAction : null;
+    const running = actionState && actionState.status === "running";
+    const actions = fileActionsForSelected(selected);
+
+    if (actions.length === 0) {
+      return '<div class="file-action-note">No file actions are available for this state.</div>';
+    }
+
+    return `
+      <div class="file-actions">
+        ${actions.map((item) => `
+          <button class="button ${item.danger ? "danger" : ""}" type="button" data-file-action="${escapeHtml(item.id)}" ${running ? "disabled" : ""}>
+            ${escapeHtml(item.label)}
+          </button>
+        `).join("")}
+      </div>
+      ${actionState && actionState.path === selected.file.path ? renderFileActionStatus(actionState) : ""}
+    `;
+  }
+
+  function fileActionsForSelected(selected) {
+    if (selected.bucket.id === "conflicted" || selected.file.conflicted) return [];
+    if (selected.bucket.id === "staged") {
+      return [
+        { id: "unstage", label: "Unstage" },
+        { id: "discard", label: "Discard", danger: true }
+      ];
+    }
+    if (selected.bucket.id === "unstaged") {
+      return [
+        { id: "stage", label: "Stage" },
+        { id: "discard", label: "Discard", danger: true }
+      ];
+    }
+    if (selected.bucket.id === "untracked") {
+      return [
+        { id: "stage", label: "Stage" },
+        { id: "discard", label: "Discard", danger: true }
+      ];
+    }
+    return [];
+  }
+
+  function renderFileActionStatus(actionState) {
+    const statusClass = actionState.status === "failed" ? "error" : actionState.status === "running" ? "running" : "success";
+    return `<div class="file-action-status ${statusClass}">${escapeHtml(actionState.message || "")}</div>`;
   }
 
   function renderDiffBody(selected) {
@@ -839,8 +1330,47 @@
 
     return `
       <div class="diff-meta">${escapeHtml(preview.message || "Unified diff.")}</div>
+      ${renderHunkActions(selected, preview)}
       <pre class="diff-view" tabindex="0"><code>${renderUnifiedDiff(preview.diff)}</code></pre>
     `;
+  }
+
+  function renderHunkActions(selected, preview) {
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+    const actionState = active && active.fileAction ? active.fileAction : null;
+    const running = actionState && actionState.status === "running";
+    const action = hunkActionForSelected(selected);
+    if (!action) return "";
+
+    const hunks = diffHunkSummaries(preview.diff);
+    if (hunks.length === 0) {
+      return '<div class="file-action-note">No applicable hunks were found in this diff.</div>';
+    }
+
+    return `
+      <div class="hunk-actions" aria-label="Hunk actions">
+        ${hunks.map((hunk) => `
+          <div class="hunk-action-row">
+            <span>${escapeHtml(hunk.header)}</span>
+            <button class="button" type="button" data-hunk-action="${escapeHtml(action.id)}" data-hunk-index="${hunk.index}" ${running ? "disabled" : ""}>
+              ${escapeHtml(action.label)}
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function hunkActionForSelected(selected) {
+    if (selected.bucket.id === "unstaged") return { id: "stage-hunk", label: "Stage hunk" };
+    if (selected.bucket.id === "staged") return { id: "unstage-hunk", label: "Unstage hunk" };
+    return null;
+  }
+
+  function diffHunkSummaries(diff) {
+    return String(diff || "").split(/\r?\n/)
+      .filter((line) => line.startsWith("@@"))
+      .map((header, index) => ({ index, header }));
   }
 
   function selectedPreview(selected) {
@@ -872,6 +1402,87 @@
         <div class="preview-state">${total === 0 ? "Working tree is clean." : "Select a file from a change list."}</div>
       </section>
     `;
+  }
+
+  function renderGitOutput(repo) {
+    const output = Array.isArray(repo.gitOutput) ? repo.gitOutput : [];
+    return `
+      <section class="git-output" aria-label="Git output">
+        <h3>Git Output</h3>
+        ${output.length === 0 ? '<div class="git-output-empty">No Git file actions have run in this tab.</div>' : `
+          <div class="git-output-list">
+            ${output.map(renderGitOutputEntry).join("")}
+          </div>
+        `}
+      </section>
+    `;
+  }
+
+  function renderGitOutputEntry(entry) {
+    const raw = [entry.stdout, entry.stderr].filter((value) => clean(value)).join("\n").trim();
+    const status = entry.ok ? `exit ${entry.exitCode === null ? 0 : entry.exitCode}` : `failed${entry.exitCode === null ? "" : ` exit ${entry.exitCode}`}`;
+    return `
+      <article class="git-output-entry ${entry.ok ? "success" : "error"}">
+        <div class="git-output-meta">
+          <strong>${escapeHtml(entry.command)}</strong>
+          <span>${escapeHtml(status)}</span>
+        </div>
+        <div class="git-output-message">${escapeHtml(entry.message || "")}</div>
+        ${raw ? `<pre>${escapeHtml(raw)}</pre>` : ""}
+      </article>
+    `;
+  }
+
+  function syncCommitControls(form, repo) {
+    const primary = form.querySelector("[data-commit-primary]");
+    const status = form.querySelector("[data-commit-status]");
+    const running = repo.commitAction && repo.commitAction.status === "running";
+    const currentRepo = {
+      ...repo,
+      commitMessage: form.querySelector("[data-commit-message]")?.value || ""
+    };
+    const validation = validateCommitAction(currentRepo, "commit");
+
+    if (primary) {
+      primary.disabled = !validation.ok || running;
+    }
+    if (status && (!repo.commitAction || repo.commitAction.status !== "running")) {
+      status.className = `commit-status ${validation.ok ? "idle" : "error"}`;
+      status.textContent = validation.message;
+    }
+  }
+
+  function validateCommitAction(repo, action) {
+    if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
+      return { ok: false, message: "Open a Git repository before committing." };
+    }
+    if (repo.health === "conflict" || countFiles(repo.git.conflicted) > 0) {
+      return { ok: false, message: "Resolve conflicts before committing." };
+    }
+    if (repo.commitAction && repo.commitAction.status === "running") {
+      return { ok: false, message: "Commit is running." };
+    }
+    if (!clean(repo.commitMessage)) {
+      return { ok: false, message: "Enter a commit message before committing." };
+    }
+    if (action !== "amend" && countFiles(repo.git.staged) === 0) {
+      return { ok: false, message: "Stage at least one change before committing." };
+    }
+    return { ok: true, message: action === "amend" ? "Amend will rewrite the latest commit." : "Ready to commit staged changes." };
+  }
+
+  function commitStatusClass(status) {
+    if (!status) return "idle";
+    if (status.status === "running") return "running";
+    if (status.status === "failed" || status.status === "blocked") return "error";
+    if (status.status === "succeeded") return "success";
+    return "idle";
+  }
+
+  function commitActionRunningLabel(action) {
+    if (action === "amend") return "Amending commit.";
+    if (action === "commit-staged") return "Committing staged changes.";
+    return "Creating commit.";
   }
 
   function changeBuckets(git) {
@@ -924,6 +1535,15 @@
     if (file.type === "deleted") return "deleted";
     if (file.type === "modified") return "modified";
     return "changed";
+  }
+
+  function fileActionLabel(action) {
+    if (action === "stage") return "Staging";
+    if (action === "unstage") return "Unstaging";
+    if (action === "stage-hunk") return "Staging hunk";
+    if (action === "unstage-hunk") return "Unstaging hunk";
+    if (action === "discard") return "Discarding";
+    return "Git action";
   }
 
   function setMessage(kind, text) {

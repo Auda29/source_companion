@@ -345,6 +345,50 @@ Nicht erlaubt:
 
 ## 7. UI-Struktur
 
+### 7.0 UI-Laufzeitstrategie
+
+Der aktuelle UI-Aufbau startet als Web-/HTML-Prototyp. Diese Web-Version dient dazu, Layout, Source-Control-Flows, Tabs, Diffs, Commit-Bereich, Graph/History und GitHub-Einstiege schnell sichtbar und testbar zu machen.
+
+Nach dem lauffaehigen Web-UI soll Source Companion als lokale Desktop-App geplant und umgesetzt werden.
+
+Begruendung:
+- Das Produkt braucht Zugriff auf lokale Repositories.
+- Git CLI muss lokal ausgefuehrt werden.
+- Dateiwatcher braucht lokalen Dateisystemzugriff.
+- Zielordner fuer Clone/Publish muessen frei waehlbar sein.
+- Eine reine Web-App kann diese Anforderungen nicht sauber erfuellen.
+
+Technische Richtung:
+- Web-UI als wiederverwendbare Frontend-Schicht behalten.
+- Desktop-Shell spaeter darum legen.
+- Tauri oder Electron evaluieren, mit Praeferenz fuer eine schlanke lokale Desktop-App.
+
+Desktop-Zielbild:
+- kleines Floating Window als kompakter Standardmodus
+- Umschalten auf Full UI mit dem Umfang der Web-Version
+- gleiche Repository-Kontexte und Git-Operationen in beiden Modi
+- keine zusaetzliche Produktdomaene durch die Desktop-Shell
+
+Floating Window:
+- zeigt aktives Repository
+- aktueller Branch
+- kompakter Change-Zaehler
+- Commit-Message-Feld oder kompakter Commit-Einstieg
+- schnelle Aktionen fuer Commit, Commit and Push, Push, Pull/Sync
+- Status-/Fehlerhinweis
+- Button zum Oeffnen der Full UI
+
+Full UI:
+- entspricht der Web-Version
+- Repo-Tabs
+- Projektauswahl
+- Source-Control-Listen
+- Diff-Flaeche
+- Commit-Bereich
+- Branch/Sync-Leiste
+- einklappbarer Graph/History-Bereich
+- Git Output/Fehlerbereich
+
 ### 7.1 Grundlayout
 
 Das Layout besteht aus wenigen festen Bereichen:

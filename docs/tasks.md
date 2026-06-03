@@ -21,6 +21,8 @@ Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleiner
 
 Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere Todo-Aufgaben ersetzt. GitHub PR/Checks/Kommentare sind jetzt in `T28` bis `T30` getrennt; Merge/Rebase ist in Scope-Entscheidung `T31` und optionale Umsetzung `T32` getrennt.
 
+Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discard muss bei gemischten Datei-Zustaenden wie `MM` den ausgewaehlten Bucket respektieren, damit Worktree-Discard nicht versehentlich staged Inhalt verliert. `T13` bleibt im Review, sollte aber erst nach dem `T12`-Fix final abgenommen werden.
+
 ## Aufgaben
 
 ### T1 - Produktquelle und Scope-Gates festziehen
@@ -146,31 +148,35 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 
 ### T12 - Datei-Staging, Unstaging und Discard umsetzen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T10`, `T11`
-- Definition of Done: Datei stage, unstage und discard funktionieren fuer passende Git-Zustaende; Discard zeigt eine bestaetigte Warnung; Fehler aus Git werden lesbar im UI und im Git Output angezeigt.
-- Implementierungsnotiz: Discard muss klar machen, dass lokale Aenderungen verloren gehen koennen.
-- Review-Ergebnis: -
+- Definition of Done: Datei stage, unstage und discard funktionieren fuer passende Git-Zustaende; Discard zeigt eine bestaetigte Warnung; Fehler aus Git werden lesbar im UI und im Git Output angezeigt; gemischte staged/unstaged Zustaende wie `MM` und `AM` sind abgedeckt, wobei Discard aus `Changed` nur Worktree-Aenderungen verwirft und den staged Index-Inhalt erhaelt.
+- Implementierungsnotiz: Discard muss klar machen, dass lokale Aenderungen verloren gehen koennen. Die Aktion muss am ausgewaehlten Bucket haengen, nicht nur an `file.staged`/`file.unstaged`; fuer `Changed` bevorzugt Worktree-Discard, fuer `Staged` explizit Staged-Discard.
+- Notiz: Review-Punkt adressiert: Discard aus dem `Changed`/unstaged Bucket priorisiert jetzt den ausgewaehlten Bucket und fuehrt fuer gemischte Zustaende wie `MM` ein Worktree-only `git restore --worktree -- <path>` aus, sodass staged Index-Inhalt erhalten bleibt. `tests/repository-file-actions.test.js` enthaelt eine Regression mit echter `MM`-Datei; fokussierter Node-Test bestand mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-03. Datei-Stage, -Unstage und -Discard sind ueber den whitelisted Git Wrapper gekapselt, Fehler und Git Output werden in der UI sichtbar, Discard wird bestaetigt, und die Regression fuer gemischte `MM`-Zustaende bewahrt beim Discard aus `Changed` den staged Index-Inhalt. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; der Browser-Smoke-Check war durch lokale `file://`-Policy blockiert.
 - Offene Review-Punkte: -
 
 ### T13 - Hunk-Staging und Hunk-Unstaging implementieren
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T11`, `T12`
 - Definition of Done: Einzelne Hunks koennen staged und unstaged werden; veraltete Diffs, Whitespace-Probleme und nicht anwendbare Patches werden erkannt und verstaendlich angezeigt; nach erfolgreicher Aktion wird der Status konsistent aktualisiert.
 - Implementierungsnotiz: Patch-Anwendung robust kapseln. Keine stillen Teil-Erfolge ohne sichtbaren Status.
-- Review-Ergebnis: -
+- Notiz: `src/repository-hunk-actions.js` kapselt einzelnes Hunk-Staging/-Unstaging ueber `git apply --cached` mit vorgeschaltetem `--check` und Whitespace-Fehlererkennung; `src/main.js` zeigt Stage/Unstage-Hunk-Aktionen fuer ready staged/unstaged Diffs, schreibt Ergebnisse in Git Output und aktualisiert den Repository-Status nach Erfolg. `tests/repository-hunk-actions.test.js` deckt Hunk-Patch-Bau, stale/ungueltige Hunks und einen echten Stage/Unstage-Hunk-Lauf ab.
+- Review-Abhaengigkeit: Finales Review erst nach `T12`-Fix abschliessen; danach Hunk Stage/Unstage mit einer Datei pruefen, die gleichzeitig staged und unstaged Aenderungen hat.
+- Review-Ergebnis: Bestanden am 2026-06-03. Einzelne Hunks werden fuer unstaged und staged Diffs ueber `git apply --cached` mit vorgeschaltetem `--check` verarbeitet; stale, ungueltige und Whitespace-fehlerhafte Patches liefern lesbare Fehler, erfolgreiche Aktionen aktualisieren den Repository-Status, und der reale Hunk-Test deckt eine Datei mit gleichzeitig staged und unstaged Aenderungen ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; der Browser-Smoke-Check war durch lokale `file://`-Policy blockiert.
 - Offene Review-Punkte: -
 
 ### T14 - Commit- und Amend-Flow bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T10`, `T12`
 - Definition of Done: Commit Message, normaler Commit, Commit staged changes und Amend Commit sind bedienbar; Commit-Button ist nur aktiv, wenn Commit moeglich ist; Commit-Varianten sind ueber ein Dropdown erreichbar; fehlende Message, leeres Staging und Git-Fehler werden nahe am Commit-Bereich angezeigt; Amend ist sichtbar als history-aendernde Aktion markiert; UI laesst spaeteren Generierungsflow fuer leere Commit Message zu.
 - Implementierungsnotiz: Codex-Commit-UI als Referenz nehmen: Commit-Message-Feld prominent, klare Primaeraktion und Dropdown fuer Varianten. Optionaler Hinweis "leer lassen zum Generieren" erst wenn AI Commit Message entschieden ist. Keine AI Commit Message in diesem Task.
+- Notiz: `src/repository-commit-actions.js` kapselt Commit, Commit staged changes und Amend Commit ueber den Git Wrapper mit Message-/Staging-Validierung und lesbaren Git-Fehlern; `src/main.js` rendert pro Repository-Tab einen Commit-Bereich mit Message-Feld, deaktivierter Primaeraktion bis Commit moeglich ist, Varianten-Dropdown, Amend-Warnung, Inline-Status, Git Output und Refresh nach Erfolg. `tests/repository-commit-actions.test.js` deckt Validierung, strukturierten Command-Bau sowie echten Commit- und Amend-Lauf ab.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -331,5 +337,45 @@ Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere 
 - Abhaengigkeiten: `T6`, `T8`, `T15`, `T16`, `T23`, `T31`
 - Definition of Done: Falls `T31` Merge fuer den ersten Produktumfang freigibt, kann der aktuelle Branch mit einem ausgewaehlten Branch gemerged werden; Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output sind sichtbar; bei uncommitted changes oder Git-Konflikten wird kein Terminal vorausgesetzt; falls `T31` Merge verschiebt, wird dieser Task entsprechend als nicht mehr im ersten Umfang markiert.
 - Implementierungsnotiz: Rebase nur in einem separaten spaeteren Task planen, wenn `T31` es ausdruecklich freigibt und Fehler-, Warn- und Abbruchfaelle sauber bedienbar sind.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T33 - Desktop-App-Laufzeitentscheidung treffen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T2`, `T4`, `T6`, `T8`
+- Definition of Done: Entscheidung fuer die Desktop-Shell ist dokumentiert; Tauri und Electron wurden gegen lokale Git-CLI-Ausfuehrung, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth, Packaging, Update-Strategie und UI-Wiederverwendung bewertet; `docs/plan.md` und Architekturdocs beschreiben Web-Prototyp plus Desktop-Ziel klar.
+- Implementierungsnotiz: Praeferenz ist eine schlanke lokale Desktop-App. Web-UI bleibt als Frontend-Schicht erhalten; Desktop-Shell darf keine neue Produktdomaene einfuehren.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T34 - Desktop-Shell fuer Full UI vorbereiten
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T33`, `T4`, `T6`, `T8`, `T18`
+- Definition of Done: Die bestehende Web-UI laeuft innerhalb einer lokalen Desktop-Shell; Git CLI, Dateiwatcher, lokale Ordnerauswahl und GitHub Auth sind ueber eine kontrollierte Bridge erreichbar; Full UI entspricht funktional der Web-Version.
+- Implementierungsnotiz: Keine direkte Node- oder Shell-Freiheit im Renderer exponieren. Bridge nur fuer whitelisted Git/GitHub/Filesystem-Aktionen. Bestehende UI-Komponenten wiederverwenden.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T35 - Floating Window Modus konzipieren und bauen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T33`, `T34`, `T14`, `T16`, `T23`
+- Definition of Done: Desktop-App bietet ein kleines Floating Window fuer den aktiven Repository-Kontext; es zeigt Repository, Branch, Change-Zaehler, Status/Fehler und kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; es bleibt fokussiert auf Git und wird nicht zum Dashboard.
+- Implementierungsnotiz: Floating Window ist der kompakte Desktop-Modus. Es soll schnell erreichbar sein und wenig Flaeche einnehmen, aber keine wichtigen Git-Fehler verstecken.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T36 - Umschalten zwischen Floating Window und Full UI umsetzen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T34`, `T35`
+- Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
+- Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -

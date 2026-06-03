@@ -16,7 +16,10 @@ test("whitelists the planned baseline Git actions", () => {
   assert.deepEqual(ALLOWED_GIT_ACTIONS, [
     "status",
     "diff",
+    "apply",
     "add",
+    "clean",
+    "rm",
     "restore",
     "commit",
     "branch",
@@ -40,12 +43,36 @@ test("builds Git arguments from structured options", () => {
     "--",
     "src/main.js"
   ]);
+  assert.deepEqual(buildGitArgs("apply", { cached: true, check: true, whitespaceError: true }), [
+    "apply",
+    "--cached",
+    "--check",
+    "--whitespace=error"
+  ]);
   assert.deepEqual(buildGitArgs("stash", { mode: "push", message: "wip", includeUntracked: true }), [
     "stash",
     "push",
     "--include-untracked",
     "--message",
     "wip"
+  ]);
+  assert.deepEqual(buildGitArgs("clean", { pathspecs: ["scratch.txt"] }), [
+    "clean",
+    "--force",
+    "--",
+    "scratch.txt"
+  ]);
+  assert.deepEqual(buildGitArgs("rm", { cached: true, pathspecs: ["new.txt"] }), [
+    "rm",
+    "--cached",
+    "--",
+    "new.txt"
+  ]);
+  assert.deepEqual(buildGitArgs("commit", { message: "Ship app", amend: true }), [
+    "commit",
+    "--message",
+    "Ship app",
+    "--amend"
   ]);
 });
 
