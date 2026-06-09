@@ -13,8 +13,8 @@ use std::{
     },
     thread,
 };
-use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri::{LogicalSize, Size};
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 struct DesktopBridgeState {
     worker: DesktopBridgeWorker,
