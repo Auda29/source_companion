@@ -352,6 +352,98 @@ test("repository workspace renders collapsed history panel from repository state
   assert.match(workspace, /HEAD commit diff: abc1234/);
 });
 
+test("source control toolbar switches view modes and refreshes repository state", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const openForm = new FakeForm("open", {
+    path: "C:\\code\\project"
+  });
+  const refreshButton = new FakeElement();
+  refreshButton.dataset = { sourceControlAction: "refresh" };
+  const diffViewButton = new FakeElement();
+  diffViewButton.dataset = { sourceControlView: "diff" };
+  const workspaceElement = new FakeToolbarWorkspaceElement({
+    actionButtons: [refreshButton],
+    viewButtons: [diffViewButton]
+  });
+  const document = new FakeDocument([openForm], {
+    workspaceContent: workspaceElement
+  });
+  let loadCount = 0;
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionRepositoryState: {
+        loadRepositoryState: async () => {
+          loadCount += 1;
+          return {
+            kind: "git-repository",
+            health: "ready",
+            error: null,
+            operations: {
+              running: [],
+              queued: [],
+              completed: [],
+              lastCompleted: null
+            },
+            github: null,
+            git: {
+              branch: { name: "main", detached: false, headSha: "abc123456789" },
+              remote: { name: "origin", kind: "github" },
+              remotes: [],
+              upstream: { name: "origin/main" },
+              divergence: { ahead: 0, behind: 0 },
+              files: [],
+              staged: [],
+              unstaged: [{ path: "src/app.js", status: " M", type: "modified" }],
+              untracked: [],
+              conflicted: [],
+              stashes: [],
+              history: {
+                status: "ready",
+                message: "No commits loaded.",
+                commits: [],
+                head: null,
+                selectedCommit: null,
+                selectedDiff: "",
+                error: null
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await openForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(workspaceElement.innerHTML, /source-control-toolbar/);
+  assert.match(workspaceElement.innerHTML, /source-control-layout view-split/);
+  assert.match(workspaceElement.innerHTML, /data-source-control-view="diff"/);
+
+  diffViewButton.listeners.click();
+  assert.match(workspaceElement.innerHTML, /source-control-layout view-diff/);
+
+  refreshButton.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(loadCount, 2);
+});
+
 test("repository workspace loads and links existing pull request for current branch", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const openForm = new FakeForm("open", {
@@ -387,8 +479,52 @@ test("repository workspace loads and links existing pull request for current bra
               title: "Add PR UI",
               state: "open",
               htmlUrl: "https://github.com/octo/source-companion/pull/4",
-              head: { ref: "feature/pr-ui" },
+              head: { ref: "feature/pr-ui", sha: "abc123" },
               base: { ref: "main" }
+            }]
+          };
+        },
+        loadPullRequestChecks: async (options) => {
+          assert.equal(options.ref, "abc123");
+          return {
+            ok: true,
+            state: "success",
+            summary: "Checks passing.",
+            statuses: [{
+              name: "legacy-ci",
+              state: "success",
+              description: "Legacy status passed",
+              detailsUrl: "https://ci.example/status/20"
+            }],
+            checks: [{
+              name: "build",
+              state: "success",
+              description: "Build passed",
+              detailsUrl: "https://github.com/octo/source-companion/actions/runs/21"
+            }]
+          };
+        },
+        loadPullRequestReviewContext: async (options) => {
+          assert.equal(options.pullNumber, 4);
+          assert.equal(options.branch, "feature/pr-ui");
+          assert.deepEqual(options.commitMessages, ["Fixes #42"]);
+          return {
+            ok: true,
+            summary: "1 review comment; 1 issue link.",
+            reviewComments: [{
+              path: "src/main.js",
+              line: 108,
+              body: "Handle missing review context.",
+              author: "reviewer",
+              htmlUrl: "https://github.com/octo/source-companion/pull/4#discussion_r30",
+              updatedAt: "2026-06-09T08:50:00Z"
+            }],
+            issueLinks: [{
+              number: 42,
+              title: "Improve PR context",
+              state: "open",
+              status: "found",
+              htmlUrl: "https://github.com/octo/source-companion/issues/42"
             }]
           };
         }
@@ -413,6 +549,15 @@ test("repository workspace loads and links existing pull request for current bra
   assert.match(workspace, /octo\/source-companion via origin/);
   assert.match(workspace, /#4 Add PR UI/);
   assert.match(workspace, /https:\/\/github\.com\/octo\/source-companion\/pull\/4/);
+  assert.match(workspace, /Checks passing/);
+  assert.match(workspace, /legacy-ci/);
+  assert.match(workspace, /build/);
+  assert.match(workspace, /https:\/\/github\.com\/octo\/source-companion\/actions\/runs\/21/);
+  assert.match(workspace, /Review context/);
+  assert.match(workspace, /src\/main\.js:108/);
+  assert.match(workspace, /Handle missing review context/);
+  assert.match(workspace, /#42/);
+  assert.match(workspace, /Improve PR context/);
   assert.match(workspace, /GitHub PR lookup/);
 });
 
@@ -537,9 +682,15 @@ function repositoryStateWithGitHub() {
       conflicted: [],
       stashes: [],
       history: {
-        status: "empty",
-        message: "No commits.",
-        commits: [],
+        status: "ready",
+        message: "1 commit loaded.",
+        commits: [{
+          hash: "abc123456789",
+          shortHash: "abc1234",
+          author: "Ada",
+          authoredAt: "2026-06-09T08:40:00Z",
+          subject: "Fixes #42"
+        }],
         head: null,
         selectedCommit: null,
         selectedDiff: "",
@@ -619,6 +770,21 @@ class FakeWorkspaceElement extends FakeElement {
     if (selector === "[data-pr-form]" && this.innerHTML.includes("data-pr-form")) {
       return [this.prForm];
     }
+    return [];
+  }
+}
+
+class FakeToolbarWorkspaceElement extends FakeElement {
+  constructor({ actionButtons = [], viewButtons = [] }) {
+    super();
+    this.actionButtons = actionButtons;
+    this.viewButtons = viewButtons;
+  }
+
+  querySelectorAll(selector) {
+    if (!this.innerHTML.includes("source-control-toolbar")) return [];
+    if (selector === "[data-source-control-action]") return this.actionButtons;
+    if (selector === "[data-source-control-view]") return this.viewButtons;
     return [];
   }
 }

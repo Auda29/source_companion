@@ -92,6 +92,16 @@ class GitHubBridgeClient {
     return normalizeSinglePullRequestResult(result);
   }
 
+  async loadPullRequestChecks(options = {}) {
+    const result = await this.callBridge("loadPullRequestChecks", options);
+    return normalizePullRequestCheckResult(result);
+  }
+
+  async loadPullRequestReviewContext(options = {}) {
+    const result = await this.callBridge("loadPullRequestReviewContext", options);
+    return normalizePullRequestReviewContextResult(result);
+  }
+
   async callBridge(method, payload) {
     if (!this.bridge || typeof this.bridge[method] !== "function") {
       throw createGitHubError({
@@ -471,6 +481,130 @@ class GitHubApiClient {
     };
   }
 
+  async loadPullRequestChecks({ owner, repo, repository, ref, sha, branch } = {}) {
+    const locator = normalizeRepositoryLocator({ owner, repo, repository });
+    if (!locator.ok) {
+      return {
+        ok: false,
+        state: "unknown",
+        statuses: [],
+        checks: [],
+        summary: "GitHub checks could not be loaded.",
+        error: locator.error
+      };
+    }
+
+    const gitRef = clean(ref || sha || branch);
+    if (!gitRef) {
+      return {
+        ok: false,
+        state: "unknown",
+        statuses: [],
+        checks: [],
+        summary: "GitHub checks could not be loaded.",
+        error: createGitHubError({
+          kind: "invalid-request",
+          message: "A pull request head SHA or branch is required to load GitHub checks."
+        })
+      };
+    }
+
+    const auth = await this.getAuthStatus();
+    if (!auth.authenticated) {
+      return {
+        ok: false,
+        state: "unknown",
+        statuses: [],
+        checks: [],
+        summary: "GitHub login is required to load checks.",
+        error: auth.error || createGitHubError({
+          kind: "github-auth-missing",
+          message: "GitHub login is required for this action."
+        })
+      };
+    }
+
+    const encodedOwner = encodeURIComponent(locator.owner);
+    const encodedRepo = encodeURIComponent(locator.repo);
+    const encodedRef = encodeURIComponent(gitRef);
+    const statusResult = await this.requestJson(`/repos/${encodedOwner}/${encodedRepo}/commits/${encodedRef}/status`);
+    if (!statusResult.ok) {
+      return createPullRequestCheckFailure(statusResult.error);
+    }
+
+    const checkResult = await this.requestJson(`/repos/${encodedOwner}/${encodedRepo}/commits/${encodedRef}/check-runs?per_page=100`);
+    if (!checkResult.ok) {
+      return createPullRequestCheckFailure(checkResult.error, {
+        statuses: normalizeCommitStatuses(statusResult.data && statusResult.data.statuses)
+      });
+    }
+
+    return normalizePullRequestCheckResult({
+      ok: true,
+      ref: gitRef,
+      state: aggregateCheckState(statusResult.data, checkResult.data),
+      summary: pullRequestCheckSummary(aggregateCheckState(statusResult.data, checkResult.data)),
+      statuses: normalizeCommitStatuses(statusResult.data && statusResult.data.statuses),
+      checks: normalizeCheckRuns(checkResult.data && checkResult.data.check_runs),
+      error: null
+    });
+  }
+
+  async loadPullRequestReviewContext({ owner, repo, repository, pullNumber, branch, commitMessages = [] } = {}) {
+    const locator = normalizeRepositoryLocator({ owner, repo, repository });
+    if (!locator.ok) {
+      return createPullRequestReviewContextFailure(locator.error);
+    }
+
+    const issueNumbers = extractIssueNumbers([branch, ...commitMessages]);
+    const auth = await this.getAuthStatus();
+    if (!auth.authenticated) {
+      return createPullRequestReviewContextFailure(auth.error || createGitHubError({
+        kind: "github-auth-missing",
+        message: "GitHub login is required for this action."
+      }), {
+        issueLinks: issueNumbers.map((number) => createUnverifiedIssueLink(locator, number))
+      });
+    }
+
+    const encodedOwner = encodeURIComponent(locator.owner);
+    const encodedRepo = encodeURIComponent(locator.repo);
+    const reviewComments = [];
+    if (Number.isInteger(pullNumber) && pullNumber > 0) {
+      const commentsResult = await this.requestJson(`/repos/${encodedOwner}/${encodedRepo}/pulls/${pullNumber}/comments?per_page=100`);
+      if (!commentsResult.ok) {
+        return createPullRequestReviewContextFailure(commentsResult.error, {
+          issueLinks: await this.loadIssueLinks(locator, issueNumbers)
+        });
+      }
+      reviewComments.push(...normalizePullRequestReviewComments(commentsResult.data));
+    }
+
+    return normalizePullRequestReviewContextResult({
+      ok: true,
+      reviewComments,
+      issueLinks: await this.loadIssueLinks(locator, issueNumbers),
+      summary: reviewContextSummary(reviewComments.length, issueNumbers.length),
+      error: null
+    });
+  }
+
+  async loadIssueLinks(locator, issueNumbers) {
+    const uniqueNumbers = Array.from(new Set((issueNumbers || []).filter((number) => Number.isInteger(number) && number > 0)));
+    const links = [];
+    for (const number of uniqueNumbers) {
+      const result = await this.requestJson(
+        `/repos/${encodeURIComponent(locator.owner)}/${encodeURIComponent(locator.repo)}/issues/${number}`
+      );
+      if (result.ok) {
+        links.push(normalizeIssueLink(result.data, locator, number));
+      } else {
+        links.push(createFailedIssueLink(locator, number, result.error));
+      }
+    }
+    return links;
+  }
+
   async requestJson(path, { token, method = "GET", body } = {}) {
     if (typeof this.fetch !== "function") {
       return {
@@ -626,6 +760,49 @@ function normalizeSinglePullRequestResult(result) {
   };
 }
 
+function normalizePullRequestCheckResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  const statuses = Array.isArray(source.statuses) ? source.statuses.map(normalizeCommitStatus) : [];
+  const checks = Array.isArray(source.checks) ? source.checks.map(normalizeCheckRun) : [];
+  const state = clean(source.state) || aggregateNormalizedCheckState(statuses, checks);
+  return {
+    ok,
+    ref: clean(source.ref),
+    state: state || "unknown",
+    summary: clean(source.summary) || (ok ? pullRequestCheckSummary(state) : "GitHub checks could not be loaded."),
+    statuses,
+    checks,
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub checks could not be loaded."
+    }))
+  };
+}
+
+function normalizePullRequestReviewContextResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  const reviewComments = Array.isArray(source.reviewComments)
+    ? source.reviewComments.map(normalizePullRequestReviewComment)
+    : [];
+  const issueLinks = Array.isArray(source.issueLinks)
+    ? source.issueLinks.map(normalizeIssueLink)
+    : [];
+  return {
+    ok,
+    reviewComments,
+    issueLinks,
+    summary: clean(source.summary) || (ok
+      ? reviewContextSummary(reviewComments.length, issueLinks.length)
+      : "GitHub review context could not be loaded."),
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub review context could not be loaded."
+    }))
+  };
+}
+
 function normalizeRepository(repo) {
   const owner = repo && repo.owner && typeof repo.owner === "object" ? clean(repo.owner.login) : clean(repo && repo.owner);
   const name = clean(repo && repo.name);
@@ -677,6 +854,189 @@ function normalizePullRequestRef(ref) {
     repo: clean(repo.name),
     fullName: clean(repo.full_name || repo.fullName) || (owner && repo.name ? `${owner}/${repo.name}` : "")
   };
+}
+
+function normalizePullRequestReviewComments(comments) {
+  return Array.isArray(comments) ? comments.map(normalizePullRequestReviewComment) : [];
+}
+
+function normalizePullRequestReviewComment(comment) {
+  const source = comment || {};
+  const user = source.user || {};
+  return {
+    id: source.id || null,
+    path: clean(source.path),
+    body: clean(source.body),
+    author: clean(user.login || source.author),
+    htmlUrl: clean(source.html_url || source.htmlUrl),
+    pullRequestReviewId: source.pull_request_review_id || source.pullRequestReviewId || null,
+    line: parseInteger(source.line) || parseInteger(source.original_line),
+    side: clean(source.side || source.original_side),
+    createdAt: clean(source.created_at || source.createdAt),
+    updatedAt: clean(source.updated_at || source.updatedAt)
+  };
+}
+
+function normalizeIssueLink(issue, locator = {}, fallbackNumber = null) {
+  const source = issue || {};
+  const number = Number.isInteger(source.number) ? source.number : fallbackNumber;
+  return {
+    number,
+    title: clean(source.title),
+    state: clean(source.state) || "unknown",
+    htmlUrl: clean(source.html_url || source.htmlUrl) || issueHtmlUrl(locator, number),
+    status: clean(source.status) || "found",
+    message: clean(source.message) || (number ? `Issue #${number} linked.` : "Issue linked."),
+    error: source.error ? normalizeGitHubError(source.error) : null
+  };
+}
+
+function createUnverifiedIssueLink(locator, number) {
+  return normalizeIssueLink({
+    number,
+    status: "unverified",
+    message: "Issue link was detected but not verified because GitHub login is unavailable."
+  }, locator, number);
+}
+
+function createFailedIssueLink(locator, number, error) {
+  const normalized = normalizeGitHubError(error);
+  const notFound = normalized.status === 404 || normalized.kind === "github-not-found";
+  return normalizeIssueLink({
+    number,
+    status: notFound ? "not-found" : "failed",
+    message: notFound ? `Issue #${number} was not found or is not visible.` : normalized.message,
+    error: normalized
+  }, locator, number);
+}
+
+function issueHtmlUrl(locator, number) {
+  if (!locator || !locator.owner || !locator.repo || !number) return "";
+  return `https://github.com/${locator.owner}/${locator.repo}/issues/${number}`;
+}
+
+function createPullRequestReviewContextFailure(error, partial = {}) {
+  return normalizePullRequestReviewContextResult({
+    ok: false,
+    reviewComments: partial.reviewComments || [],
+    issueLinks: partial.issueLinks || [],
+    summary: error && error.message ? error.message : "GitHub review context could not be loaded.",
+    error
+  });
+}
+
+function reviewContextSummary(reviewCommentCount, issueLinkCount) {
+  const comments = `${reviewCommentCount} review comment${reviewCommentCount === 1 ? "" : "s"}`;
+  const issues = `${issueLinkCount} issue link${issueLinkCount === 1 ? "" : "s"}`;
+  return `${comments}; ${issues}.`;
+}
+
+function extractIssueNumbers(values) {
+  const numbers = [];
+  (Array.isArray(values) ? values : [values]).forEach((value) => {
+    const text = clean(value);
+    if (!text) return;
+    const patterns = [
+      /(?:^|[^\w])(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+#(\d+)\b/gi,
+      /(?:^|[^\w])(?:issue|gh)[-_ ]?#(\d+)\b/gi,
+      /(?:^|[^\w])(?:issue|gh)[-_ ]?(\d+)\b/gi,
+      /(?:^|[^\w])#(\d+)\b/g
+    ];
+    patterns.forEach((pattern) => {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const number = parseInteger(match[1]);
+        if (number && !numbers.includes(number)) numbers.push(number);
+      }
+    });
+  });
+  return numbers;
+}
+
+function normalizeCommitStatuses(statuses) {
+  return Array.isArray(statuses) ? statuses.map(normalizeCommitStatus) : [];
+}
+
+function normalizeCommitStatus(status) {
+  const source = status || {};
+  const state = normalizeCheckState(source.state);
+  return {
+    id: source.id || null,
+    name: clean(source.context || source.name) || "Status",
+    state,
+    rawState: clean(source.state) || "unknown",
+    description: clean(source.description),
+    targetUrl: clean(source.target_url || source.targetUrl || source.detailsUrl || source.htmlUrl),
+    htmlUrl: clean(source.htmlUrl || source.target_url || source.targetUrl || source.detailsUrl),
+    detailsUrl: clean(source.detailsUrl || source.htmlUrl || source.target_url || source.targetUrl),
+    startedAt: clean(source.created_at || source.createdAt),
+    completedAt: clean(source.updated_at || source.updatedAt)
+  };
+}
+
+function normalizeCheckRuns(checkRuns) {
+  return Array.isArray(checkRuns) ? checkRuns.map(normalizeCheckRun) : [];
+}
+
+function normalizeCheckRun(checkRun) {
+  const source = checkRun || {};
+  const output = source.output || {};
+  const state = normalizeCheckState(source.conclusion || source.status);
+  return {
+    id: source.id || null,
+    name: clean(source.name) || "Check",
+    state,
+    rawState: clean(source.status) || "unknown",
+    conclusion: clean(source.conclusion),
+    description: clean(source.description || output.title || output.summary),
+    detailsUrl: clean(source.detailsUrl || source.html_url || source.htmlUrl || source.details_url),
+    htmlUrl: clean(source.htmlUrl || source.html_url || source.details_url || source.detailsUrl),
+    startedAt: clean(source.started_at || source.startedAt),
+    completedAt: clean(source.completed_at || source.completedAt)
+  };
+}
+
+function createPullRequestCheckFailure(error, partial = {}) {
+  return normalizePullRequestCheckResult({
+    ok: false,
+    state: "unknown",
+    summary: error && error.message ? error.message : "GitHub checks could not be loaded.",
+    statuses: partial.statuses || [],
+    checks: partial.checks || [],
+    error
+  });
+}
+
+function aggregateCheckState(statusData, checkData) {
+  return aggregateNormalizedCheckState(
+    normalizeCommitStatuses(statusData && statusData.statuses),
+    normalizeCheckRuns(checkData && checkData.check_runs)
+  );
+}
+
+function aggregateNormalizedCheckState(statuses, checks) {
+  const items = [...(statuses || []), ...(checks || [])];
+  if (items.length === 0) return "unknown";
+  if (items.some((item) => item.state === "failure")) return "failure";
+  if (items.some((item) => item.state === "running")) return "running";
+  if (items.every((item) => item.state === "success" || item.state === "neutral")) return "success";
+  return "unknown";
+}
+
+function normalizeCheckState(value) {
+  const state = clean(value).toLowerCase();
+  if (["success", "skipped"].includes(state)) return "success";
+  if (["neutral"].includes(state)) return "neutral";
+  if (["failure", "failed", "error", "timed_out", "cancelled", "action_required"].includes(state)) return "failure";
+  if (["pending", "queued", "in_progress", "requested", "waiting"].includes(state)) return "running";
+  return "unknown";
+}
+
+function pullRequestCheckSummary(state) {
+  if (state === "success") return "Checks passing.";
+  if (state === "failure") return "Checks failing.";
+  if (state === "running") return "Checks running.";
+  return "No checks reported.";
 }
 
 function normalizeRepositoryLocator({ owner, repo, repository } = {}) {
@@ -752,6 +1112,28 @@ function normalizeGitHubResponseError(response, data) {
       scopesGranted: grantedScopes,
       rateLimit,
       retryAfterSeconds,
+      raw: data
+    });
+  }
+
+  if (status === 403) {
+    return createGitHubError({
+      kind: "github-permission-missing",
+      message: "GitHub permissions are not sufficient for this action.",
+      status,
+      scopesGranted: grantedScopes,
+      rateLimit,
+      retryAfterSeconds,
+      raw: data
+    });
+  }
+
+  if (status === 404) {
+    return createGitHubError({
+      kind: "github-not-found",
+      message: "GitHub resource was not found or is not visible with the current permissions.",
+      status,
+      scopesGranted: grantedScopes,
       raw: data
     });
   }
@@ -898,6 +1280,8 @@ if (typeof module !== "undefined" && module.exports) {
     createGitHubApiClient,
     createGitHubBridgeClient,
     normalizeGitHubError,
+    normalizePullRequestReviewContextResult,
+    normalizePullRequestCheckResult,
     normalizePullRequest,
     normalizeRepository
   };

@@ -150,6 +150,52 @@ test("renderer bridge client handles pull requests without exposing tokens", asy
         },
         token: "must-not-leak"
       };
+    },
+    loadPullRequestChecks: async (options) => {
+      calls.push(["checks", options]);
+      return {
+        ok: true,
+        state: "success",
+        summary: "Checks passing.",
+        statuses: [{
+          id: 20,
+          name: "legacy-ci",
+          state: "success",
+          targetUrl: "https://ci.example/status/20",
+          token: "must-not-leak"
+        }],
+        checks: [{
+          id: 21,
+          name: "build",
+          state: "success",
+          detailsUrl: "https://github.com/octo/source-companion/actions/runs/21",
+          token: "must-not-leak"
+        }],
+        token: "must-not-leak"
+      };
+    },
+    loadPullRequestReviewContext: async (options) => {
+      calls.push(["review-context", options]);
+      return {
+        ok: true,
+        summary: "1 review comment; 1 issue link.",
+        reviewComments: [{
+          id: 30,
+          path: "src/main.js",
+          body: "Handle this edge case.",
+          author: "reviewer",
+          htmlUrl: "https://github.com/octo/source-companion/pull/4#discussion_r30",
+          token: "must-not-leak"
+        }],
+        issueLinks: [{
+          number: 42,
+          title: "Improve PR context",
+          state: "open",
+          htmlUrl: "https://github.com/octo/source-companion/issues/42",
+          token: "must-not-leak"
+        }],
+        token: "must-not-leak"
+      };
     }
   });
 
@@ -161,6 +207,17 @@ test("renderer bridge client handles pull requests without exposing tokens", asy
     head: "feature/pr",
     title: "Created PR"
   });
+  const checks = await client.loadPullRequestChecks({
+    owner: "octo",
+    repo: "source-companion",
+    ref: "abc123"
+  });
+  const reviewContext = await client.loadPullRequestReviewContext({
+    owner: "octo",
+    repo: "source-companion",
+    pullNumber: 4,
+    branch: "feature/issue-42"
+  });
 
   assert.equal(list.ok, true);
   assert.equal(list.token, undefined);
@@ -169,7 +226,17 @@ test("renderer bridge client handles pull requests without exposing tokens", asy
   assert.equal(created.ok, true);
   assert.equal(created.pullRequest.token, undefined);
   assert.equal(created.pullRequest.number, 5);
-  assert.deepEqual(calls.map((call) => call[0]), ["list", "create"]);
+  assert.equal(checks.ok, true);
+  assert.equal(checks.token, undefined);
+  assert.equal(checks.checks[0].token, undefined);
+  assert.equal(checks.state, "success");
+  assert.equal(reviewContext.ok, true);
+  assert.equal(reviewContext.token, undefined);
+  assert.equal(reviewContext.reviewComments[0].token, undefined);
+  assert.equal(reviewContext.issueLinks[0].token, undefined);
+  assert.equal(reviewContext.reviewComments[0].path, "src/main.js");
+  assert.equal(reviewContext.issueLinks[0].number, 42);
+  assert.deepEqual(calls.map((call) => call[0]), ["list", "create", "checks", "review-context"]);
 });
 
 test("stores device login token in secure store and returns token-free status", async () => {
@@ -445,6 +512,126 @@ test("creates a pull request with normalized API request", async () => {
   assert.equal(result.pullRequest.base.ref, "main");
 });
 
+test("loads pull request status and check runs for a commit", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  const requests = [];
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      if (url.includes("/status")) {
+        return createResponse(200, {
+          state: "success",
+          statuses: [{
+            id: 20,
+            context: "legacy-ci",
+            state: "success",
+            description: "Legacy status passed",
+            target_url: "https://ci.example/status/20",
+            created_at: "2026-06-09T08:35:00Z",
+            updated_at: "2026-06-09T08:45:00Z"
+          }]
+        });
+      }
+      return createResponse(200, {
+        check_runs: [{
+          id: 21,
+          name: "build",
+          status: "completed",
+          conclusion: "success",
+          html_url: "https://github.com/octo/source-companion/actions/runs/21",
+          output: {
+            title: "Build passed"
+          },
+          started_at: "2026-06-09T08:36:00Z",
+          completed_at: "2026-06-09T08:46:00Z"
+        }]
+      });
+    }
+  });
+
+  const result = await client.loadPullRequestChecks({
+    owner: "octo",
+    repo: "source-companion",
+    ref: "abc123"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.state, "success");
+  assert.equal(result.summary, "Checks passing.");
+  assert.equal(result.statuses[0].name, "legacy-ci");
+  assert.equal(result.statuses[0].detailsUrl, "https://ci.example/status/20");
+  assert.equal(result.checks[0].name, "build");
+  assert.equal(result.checks[0].detailsUrl, "https://github.com/octo/source-companion/actions/runs/21");
+  assert.equal(requests[0].url, "https://api.github.com/repos/octo/source-companion/commits/abc123/status");
+  assert.equal(requests[1].url, "https://api.github.com/repos/octo/source-companion/commits/abc123/check-runs?per_page=100");
+});
+
+test("loads pull request review comments and verifies linked issues", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  const requests = [];
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      if (url.includes("/pulls/4/comments")) {
+        return createResponse(200, [{
+          id: 30,
+          path: "src/main.js",
+          line: 108,
+          side: "RIGHT",
+          body: "Handle missing review context.",
+          html_url: "https://github.com/octo/source-companion/pull/4#discussion_r30",
+          user: { login: "reviewer" },
+          updated_at: "2026-06-09T08:50:00Z"
+        }]);
+      }
+      if (url.endsWith("/issues/42")) {
+        return createResponse(200, {
+          number: 42,
+          title: "Improve PR context",
+          state: "open",
+          html_url: "https://github.com/octo/source-companion/issues/42"
+        });
+      }
+      return createResponse(404, { message: "Not Found" });
+    }
+  });
+
+  const result = await client.loadPullRequestReviewContext({
+    owner: "octo",
+    repo: "source-companion",
+    pullNumber: 4,
+    branch: "feature/issue-42-review",
+    commitMessages: ["Fixes #99"]
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reviewComments[0].path, "src/main.js");
+  assert.equal(result.reviewComments[0].author, "reviewer");
+  assert.equal(result.issueLinks[0].number, 42);
+  assert.equal(result.issueLinks[0].status, "found");
+  assert.equal(result.issueLinks[1].number, 99);
+  assert.equal(result.issueLinks[1].status, "not-found");
+  assert.equal(requests[0].url, "https://api.github.com/repos/octo/source-companion/pulls/4/comments?per_page=100");
+  assert.equal(requests[1].url, "https://api.github.com/repos/octo/source-companion/issues/42");
+  assert.equal(requests[2].url, "https://api.github.com/repos/octo/source-companion/issues/99");
+});
+
 test("reports missing GitHub remote mapping before pull request API calls", async () => {
   const tokenStore = new MemorySecureTokenStore();
   await tokenStore.write({
@@ -567,6 +754,24 @@ test("normalizes missing auth, invalid token, and rate-limit API failures", asyn
     resetAt: "2026-06-09T06:40:00.000Z",
     retryAfterSeconds: null
   });
+
+  const permissionStore = new MemorySecureTokenStore();
+  await permissionStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"]
+  });
+  const permissionDenied = createGitHubApiClient({
+    tokenStore: permissionStore,
+    fetchImpl: async () => createResponse(403, { message: "Resource not accessible by integration" })
+  });
+  const permissionResult = await permissionDenied.loadPullRequestChecks({
+    owner: "octo",
+    repo: "source-companion",
+    ref: "abc123"
+  });
+  assert.equal(permissionResult.ok, false);
+  assert.equal(permissionResult.error.kind, "github-permission-missing");
 });
 
 test("logout deletes secure token and reports revocation errors separately", async () => {

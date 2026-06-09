@@ -550,6 +550,18 @@
       });
     });
 
+    workspaceContent.querySelectorAll("[data-source-control-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runSourceControlToolbarAction(active.id, button.dataset.sourceControlAction);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-source-control-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setSourceControlViewMode(active.id, button.dataset.sourceControlView);
+      });
+    });
+
     workspaceContent.querySelectorAll("[data-file-action]").forEach((button) => {
       button.addEventListener("click", () => {
         runSelectedFileAction(active.id, button.dataset.fileAction);
@@ -672,6 +684,7 @@
         requestedAt: openedAt,
         completedAt: null
       },
+      sourceControlViewMode: "split",
       selectedChangeKey: null,
       diffPreview: null,
       fileAction: null,
@@ -1083,11 +1096,18 @@
         branch,
         headOwner: github.owner
       });
+      const existingPullRequest = result && result.ok ? result.pullRequests && result.pullRequests[0] : null;
+      const [checkStatus, reviewContext] = await Promise.all([
+        loadPullRequestChecksFor(tab, existingPullRequest),
+        loadPullRequestReviewContextFor(tab, existingPullRequest)
+      ]);
       applyPullRequestResult(tabId, {
         ...result,
         action: "github-pr-list",
         branch,
         repository: github.fullName,
+        checkStatus,
+        reviewContext,
         command: { display: "GitHub PR lookup" },
         message: pullRequestListMessage(result)
       });
@@ -1139,12 +1159,19 @@
         description,
         draft
       });
+      const createdPullRequest = result && result.ok ? result.pullRequest : null;
+      const [checkStatus, reviewContext] = await Promise.all([
+        loadPullRequestChecksFor(tab, createdPullRequest),
+        loadPullRequestReviewContextFor(tab, createdPullRequest)
+      ]);
       applyPullRequestResult(tabId, {
         ...result,
         action: "github-pr-create",
         base,
         head,
         repository: github.fullName,
+        checkStatus,
+        reviewContext,
         command: { display: "GitHub PR create" },
         message: pullRequestCreateMessage(result)
       });
@@ -1153,6 +1180,95 @@
         kind: "github-pr-create-error",
         message: error && error.message ? error.message : "Pull request could not be created."
       }));
+    }
+  }
+
+  async function loadPullRequestChecksFor(tab, pullRequest) {
+    if (!pullRequest) return normalizePullRequestCheckState();
+    if (!state.githubClient || typeof state.githubClient.loadPullRequestChecks !== "function") {
+      return normalizePullRequestCheckState({
+        status: "blocked",
+        state: "unknown",
+        message: "GitHub check lookup is not available in this runtime.",
+        error: {
+          kind: "github-checks-unavailable",
+          message: "GitHub check lookup is not available in this runtime."
+        }
+      });
+    }
+
+    const github = tab.github || {};
+    const ref = pullRequest.head && (pullRequest.head.sha || pullRequest.head.ref)
+      ? pullRequest.head.sha || pullRequest.head.ref
+      : currentBranchName(tab.git);
+
+    try {
+      const result = await state.githubClient.loadPullRequestChecks({
+        owner: github.owner,
+        repo: github.name || github.repository,
+        ref,
+        branch: currentBranchName(tab.git)
+      });
+      return normalizePullRequestCheckState({
+        status: result.ok ? "succeeded" : "failed",
+        state: result.state,
+        message: result.summary,
+        summary: result.summary,
+        statuses: result.statuses,
+        checks: result.checks,
+        error: result.error || null
+      });
+    } catch (error) {
+      return normalizePullRequestCheckState({
+        status: "failed",
+        state: "unknown",
+        message: error && error.message ? error.message : "GitHub checks could not be loaded.",
+        error: {
+          kind: "github-checks-error",
+          message: error && error.message ? error.message : "GitHub checks could not be loaded."
+        }
+      });
+    }
+  }
+
+  async function loadPullRequestReviewContextFor(tab, pullRequest) {
+    if (!pullRequest) return normalizePullRequestReviewContextState();
+    if (!state.githubClient || typeof state.githubClient.loadPullRequestReviewContext !== "function") {
+      return normalizePullRequestReviewContextState({
+        status: "blocked",
+        summary: "GitHub review context lookup is not available in this runtime.",
+        error: {
+          kind: "github-review-context-unavailable",
+          message: "GitHub review context lookup is not available in this runtime."
+        }
+      });
+    }
+
+    const github = tab.github || {};
+    try {
+      const result = await state.githubClient.loadPullRequestReviewContext({
+        owner: github.owner,
+        repo: github.name || github.repository,
+        pullNumber: pullRequest.number,
+        branch: currentBranchName(tab.git),
+        commitMessages: commitMessagesForIssueDetection(tab.git)
+      });
+      return normalizePullRequestReviewContextState({
+        status: result.ok ? "succeeded" : "failed",
+        summary: result.summary,
+        reviewComments: result.reviewComments,
+        issueLinks: result.issueLinks,
+        error: result.error || null
+      });
+    } catch (error) {
+      return normalizePullRequestReviewContextState({
+        status: "failed",
+        summary: error && error.message ? error.message : "GitHub review context could not be loaded.",
+        error: {
+          kind: "github-review-context-error",
+          message: error && error.message ? error.message : "GitHub review context could not be loaded."
+        }
+      });
     }
   }
 
@@ -1168,6 +1284,25 @@
     };
 
     loadSelectedDiff(tabId, changeKeyValue);
+  }
+
+  function runSourceControlToolbarAction(tabId, action) {
+    if (action === "refresh") {
+      refreshRepositoryState(tabId, "toolbar");
+      return;
+    }
+
+    if (action === "commit") {
+      runRepositoryCommitAction(tabId, "commit");
+    }
+  }
+
+  function setSourceControlViewMode(tabId, mode) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.sourceControlViewMode = normalizeSourceControlViewMode(mode);
+    render();
   }
 
   async function loadSelectedDiff(tabId, changeKeyValue) {
@@ -2091,6 +2226,8 @@
       message: result.message || (result.ok ? "Pull request action completed." : "Pull request action failed."),
       pullRequests,
       existing,
+      checkStatus: normalizePullRequestCheckState(result.checkStatus || existingState.checkStatus),
+      reviewContext: normalizePullRequestReviewContextState(result.reviewContext || existingState.reviewContext),
       loadedKey: result.ok ? existingState.contextKey : existingState.loadedKey,
       created: result.pullRequest || existingState.created,
       error: result.error || null,
@@ -2163,6 +2300,23 @@
     if (result.pullRequest && result.pullRequest.htmlUrl) details.push(`Pull request: ${result.pullRequest.htmlUrl}`);
     if (Array.isArray(result.pullRequests) && result.pullRequests[0] && result.pullRequests[0].htmlUrl) {
       details.push(`Pull request: ${result.pullRequests[0].htmlUrl}`);
+    }
+    if (result.checkStatus) {
+      const checkStatus = normalizePullRequestCheckState(result.checkStatus);
+      details.push(`PR checks: ${pullRequestCheckLabel(checkStatus.state)} - ${checkStatus.message || checkStatus.summary}`);
+      [...checkStatus.statuses, ...checkStatus.checks].forEach((check) => {
+        details.push(`Check ${check.state || "unknown"}: ${check.name || "Check"}${check.detailsUrl || check.htmlUrl ? ` - ${check.detailsUrl || check.htmlUrl}` : ""}`);
+      });
+    }
+    if (result.reviewContext) {
+      const reviewContext = normalizePullRequestReviewContextState(result.reviewContext);
+      details.push(`PR review context: ${reviewContext.summary}`);
+      reviewContext.reviewComments.forEach((comment) => {
+        details.push(`Review comment: ${comment.path || "file"}${comment.line ? `:${comment.line}` : ""}${comment.htmlUrl ? ` - ${comment.htmlUrl}` : ""}`);
+      });
+      reviewContext.issueLinks.forEach((issue) => {
+        details.push(`Issue ${issue.status || "unknown"}: #${issue.number}${issue.htmlUrl ? ` - ${issue.htmlUrl}` : ""}`);
+      });
     }
     return details;
   }
@@ -2681,9 +2835,11 @@
   function renderSourceControl(repo) {
     const buckets = changeBuckets(repo.git);
     const selected = selectedChange(repo, buckets);
+    const viewMode = sourceControlViewMode(repo);
 
     return `
       <section class="source-control" aria-label="Source control changes">
+        ${renderSourceControlToolbar(repo, selected, viewMode)}
         ${renderClonePanel(repo)}
         ${renderPublishPanel(repo)}
         ${renderBranchPanel(repo)}
@@ -2692,7 +2848,7 @@
         ${renderStashPanel(repo)}
         ${renderHistoryPanel(repo)}
         ${renderCommitBox(repo)}
-        <div class="source-control-layout">
+        <div class="source-control-layout view-${escapeHtml(viewMode)}">
           <div class="change-lists">
             ${buckets.map((bucket) => renderChangeBucket(bucket, repo.selectedChangeKey)).join("")}
           </div>
@@ -2702,6 +2858,51 @@
           </div>
         </div>
       </section>
+    `;
+  }
+
+  function renderSourceControlToolbar(repo, selected, viewMode) {
+    const refreshRunning = repo.lastRefresh && repo.lastRefresh.status === "running";
+    const commitValidation = validateCommitAction(repo, "commit");
+    const fileActions = selected ? fileActionsForSelected(selected) : [];
+    const fileActionState = repo.fileAction || null;
+    const fileActionRunning = fileActionState && fileActionState.status === "running";
+    const syncActions = ["fetch", "pull", "push", "sync"];
+    const prValidation = validatePullRequestAction(repo, "load");
+    const stashValidation = validateStashAction(repo, "list", {});
+
+    return `
+      <div class="source-control-toolbar" aria-label="Source control toolbar">
+        <div class="toolbar-group">
+          <button class="icon-button" type="button" data-source-control-action="refresh" ${refreshRunning ? "disabled" : ""} title="${escapeHtml(refreshRunning ? "Refresh is running." : "Refresh repository status")}">R</button>
+          <div class="segmented-control" aria-label="Source control view mode">
+            ${["split", "list", "diff"].map((mode) => `
+              <button type="button" data-source-control-view="${escapeHtml(mode)}" class="${mode === viewMode ? "active" : ""}" aria-pressed="${mode === viewMode ? "true" : "false"}" title="${escapeHtml(sourceControlViewModeTitle(mode))}">
+                ${escapeHtml(sourceControlViewModeLabel(mode))}
+              </button>
+            `).join("")}
+          </div>
+        </div>
+        <div class="toolbar-group">
+          <button class="button compact primary" type="button" data-source-control-action="commit" ${commitValidation.ok ? "" : "disabled"} title="${escapeHtml(commitValidation.message)}">Commit</button>
+          ${fileActions.map((item) => `
+            <button class="button compact ${item.danger ? "danger" : ""}" type="button" data-file-action="${escapeHtml(item.id)}" ${fileActionRunning ? "disabled" : ""} title="${escapeHtml(selected ? `${item.label} ${selected.file.path || "selected file"}` : item.label)}">
+              ${escapeHtml(item.label)}
+            </button>
+          `).join("")}
+          <details class="toolbar-menu">
+            <summary title="More Git and GitHub actions">More</summary>
+            <div class="toolbar-menu-list">
+              ${syncActions.map((action) => {
+                const validation = validateSyncAction(repo, action);
+                return `<button type="button" data-sync-action="${escapeHtml(action)}" ${validation.ok ? "" : "disabled"} title="${escapeHtml(validation.message)}">${escapeHtml(syncActionLabel(action))}</button>`;
+              }).join("")}
+              <button type="button" data-stash-action="list" ${stashValidation.ok ? "" : "disabled"} title="${escapeHtml(stashValidation.message)}">Refresh stashes</button>
+              <button type="button" data-pr-action="load" ${prValidation.ok ? "" : "disabled"} title="${escapeHtml(prValidation.message)}">Refresh PR</button>
+            </div>
+          </details>
+        </div>
+      </div>
     `;
   }
 
@@ -2957,7 +3158,7 @@
             <a href="${escapeHtml(github.htmlUrl)}" target="_blank" rel="noreferrer">Open repository</a>
           </div>
         ` : ""}
-        ${renderExistingPullRequest(existing)}
+        ${renderExistingPullRequest(existing, prState.checkStatus, prState.reviewContext)}
         <form class="pull-request-form" data-pr-form>
           <label>
             Base branch
@@ -2985,7 +3186,7 @@
     `;
   }
 
-  function renderExistingPullRequest(pr) {
+  function renderExistingPullRequest(pr, checkStatus, reviewContext) {
     if (!pr) {
       return '<div class="pull-request-empty">No open pull request loaded for this branch.</div>';
     }
@@ -2993,6 +3194,7 @@
     const number = pr.number ? `#${pr.number}` : "PR";
     const base = pr.base && pr.base.ref ? pr.base.ref : "";
     const head = pr.head && pr.head.ref ? pr.head.ref : "";
+    const checks = normalizePullRequestCheckState(checkStatus);
     return `
       <article class="pull-request-card">
         <div>
@@ -3001,7 +3203,89 @@
         </div>
         ${pr.htmlUrl ? `<a class="button" href="${escapeHtml(pr.htmlUrl)}" target="_blank" rel="noreferrer">Open PR</a>` : ""}
       </article>
+      ${renderPullRequestChecks(checks)}
+      ${renderPullRequestReviewContext(reviewContext)}
     `;
+  }
+
+  function renderPullRequestChecks(checkStatus) {
+    const state = normalizePullRequestCheckState(checkStatus);
+    const checks = [...state.statuses, ...state.checks];
+
+    return `
+      <div class="pull-request-checks" aria-label="GitHub pull request checks">
+        <div class="pull-request-check-summary ${pullRequestCheckClass(state.state)}">
+          <strong>${escapeHtml(pullRequestCheckLabel(state.state))}</strong>
+          <span>${escapeHtml(state.message || state.summary || "No checks reported.")}</span>
+        </div>
+        ${state.error ? `
+          <div class="pull-request-check-error">
+            <strong>${escapeHtml(state.error.kind || "github-api-error")}</strong>
+            <span>${escapeHtml(state.error.message || "GitHub checks could not be loaded.")}</span>
+          </div>
+        ` : ""}
+        ${checks.length > 0 ? `
+          <div class="pull-request-check-list">
+            ${checks.map((check) => `
+              <div class="pull-request-check ${pullRequestCheckClass(check.state)}">
+                <span>
+                  <strong>${escapeHtml(check.name || "Check")}</strong>
+                  <small>${escapeHtml(check.description || check.rawState || check.conclusion || check.state || "unknown")}</small>
+                </span>
+                ${check.detailsUrl || check.htmlUrl ? `<a href="${escapeHtml(check.detailsUrl || check.htmlUrl)}" target="_blank" rel="noreferrer">Open result</a>` : ""}
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  function renderPullRequestReviewContext(reviewContext) {
+    const state = normalizePullRequestReviewContextState(reviewContext);
+    return `
+      <div class="pull-request-review-context" aria-label="GitHub review comments and issue links">
+        <div class="pull-request-review-summary ${state.error ? "error" : "idle"}">
+          <strong>Review context</strong>
+          <span>${escapeHtml(state.summary || "No review comments or issue links loaded.")}</span>
+        </div>
+        ${state.error ? `
+          <div class="pull-request-review-error">
+            <strong>${escapeHtml(state.error.kind || "github-api-error")}</strong>
+            <span>${escapeHtml(state.error.message || "GitHub review context could not be loaded.")}</span>
+          </div>
+        ` : ""}
+        ${state.reviewComments.length > 0 ? `
+          <div class="pull-request-review-list">
+            ${state.reviewComments.map((comment) => `
+              <article class="pull-request-review-comment">
+                <span>
+                  <strong>${escapeHtml(reviewCommentLocation(comment))}</strong>
+                  <small>${escapeHtml(comment.author || "GitHub review")} / ${escapeHtml(comment.updatedAt || comment.createdAt || "")}</small>
+                </span>
+                <p>${escapeHtml(comment.body || "Review comment")}</p>
+                ${comment.htmlUrl ? `<a href="${escapeHtml(comment.htmlUrl)}" target="_blank" rel="noreferrer">Open comment</a>` : ""}
+              </article>
+            `).join("")}
+          </div>
+        ` : ""}
+        ${state.issueLinks.length > 0 ? `
+          <div class="pull-request-issue-links">
+            ${state.issueLinks.map((issue) => `
+              <a class="pull-request-issue-link ${issue.status || "unknown"}" href="${escapeHtml(issue.htmlUrl || "#")}" target="_blank" rel="noreferrer">
+                <strong>${escapeHtml(`#${issue.number || "?"}`)}</strong>
+                <span>${escapeHtml(issue.title || issue.message || issue.status || "Issue link")}</span>
+              </a>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  function reviewCommentLocation(comment) {
+    const path = comment && comment.path ? comment.path : "Review comment";
+    return comment && comment.line ? `${path}:${comment.line}` : path;
   }
 
   function renderHistoryPanel(repo) {
@@ -3399,6 +3683,26 @@
     ];
   }
 
+  function sourceControlViewMode(repo) {
+    return normalizeSourceControlViewMode(repo && repo.sourceControlViewMode);
+  }
+
+  function normalizeSourceControlViewMode(mode) {
+    return ["split", "list", "diff"].includes(mode) ? mode : "split";
+  }
+
+  function sourceControlViewModeLabel(mode) {
+    if (mode === "list") return "List";
+    if (mode === "diff") return "Diff";
+    return "Split";
+  }
+
+  function sourceControlViewModeTitle(mode) {
+    if (mode === "list") return "Show change lists only";
+    if (mode === "diff") return "Show selected diff and Git output";
+    return "Show change lists and selected diff";
+  }
+
   function selectedChange(repo, buckets) {
     if (!repo.selectedChangeKey) return null;
 
@@ -3716,9 +4020,69 @@
       pullRequests: [],
       existing: null,
       created: null,
+      checkStatus: normalizePullRequestCheckState(),
+      reviewContext: normalizePullRequestReviewContextState(),
       error: null,
       completedAt: null
     };
+  }
+
+  function normalizePullRequestCheckState(source = {}) {
+    const statuses = Array.isArray(source.statuses) ? source.statuses : [];
+    const checks = Array.isArray(source.checks) ? source.checks : [];
+    const state = clean(source.state) || aggregatePullRequestCheckState(statuses, checks);
+    return {
+      status: source.status || "idle",
+      state,
+      message: clean(source.message || source.summary) || "No checks reported.",
+      summary: clean(source.summary || source.message) || "No checks reported.",
+      statuses,
+      checks,
+      error: source.error || null,
+      completedAt: source.completedAt || null
+    };
+  }
+
+  function aggregatePullRequestCheckState(statuses, checks) {
+    const items = [...(statuses || []), ...(checks || [])];
+    if (items.length === 0) return "unknown";
+    if (items.some((item) => item.state === "failure")) return "failure";
+    if (items.some((item) => item.state === "running")) return "running";
+    if (items.every((item) => item.state === "success" || item.state === "neutral")) return "success";
+    return "unknown";
+  }
+
+  function pullRequestCheckLabel(state) {
+    if (state === "success") return "Checks passing";
+    if (state === "failure") return "Checks failing";
+    if (state === "running") return "Checks running";
+    return "Checks unknown";
+  }
+
+  function pullRequestCheckClass(state) {
+    if (state === "success") return "success";
+    if (state === "failure") return "error";
+    if (state === "running") return "warning";
+    return "unknown";
+  }
+
+  function normalizePullRequestReviewContextState(source = {}) {
+    return {
+      status: source.status || "idle",
+      summary: clean(source.summary) || "No review comments or issue links loaded.",
+      reviewComments: Array.isArray(source.reviewComments) ? source.reviewComments : [],
+      issueLinks: Array.isArray(source.issueLinks) ? source.issueLinks : [],
+      error: source.error || null,
+      completedAt: source.completedAt || null
+    };
+  }
+
+  function commitMessagesForIssueDetection(git) {
+    const history = normalizeHistoryState(git && git.history);
+    return history.commits
+      .slice(0, 20)
+      .map((commit) => commit.subject || commit.message)
+      .filter(Boolean);
   }
 
   function pullRequestContextKey(repo) {

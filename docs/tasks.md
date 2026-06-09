@@ -29,6 +29,8 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetzt, damit GitHub-Remote-/PR-API-Grundlage und PR-UI-Flow getrennt reviewbar sind.
 
+Stand 2026-06-09: Die zu breite Desktop-Shell-Aufgabe `T34` wurde durch `T48` bis `T51` ersetzt, damit Tauri-Shell, Bridge-Vertrag, native Dialoge/Watcher und GitHub-Auth-/Full-UI-Paritaet getrennt umsetzbar und reviewbar sind.
+
 ## Aufgaben
 
 ### T1 - Produktquelle und Scope-Gates festziehen
@@ -320,12 +322,12 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T24 - Kernflows testen und Review-Checkliste dokumentieren
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
-- Notiz: 2026-06-09 13:15 CEST erneut nicht umgesetzt, weil T24 weiterhin von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
+- Notiz: 2026-06-09 14:38 CEST umgesetzt: `docs/core-flow-review-checklist.md` dokumentiert automatisierte Basispruefung, Testabdeckung und manuelle Repro-Schritte fuer Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei-/Hunk-Staging, Commit, Amend, Branch, Pull/Push-Fehler, Stash, GitHub Auth-Fehler, PR/Checks, Review-Kommentare und ausgeschlossene Features. Vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -341,12 +343,13 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T26 - Source-Control-Toolbar und View Modes bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T9`, `T10`, `T11`, `T16`
 - Definition of Done: Source-Control-Bereich hat kompakte Toolbar-Aktionen fuer Refresh, View Mode, Commit/Checkmark, Source-Control-Aktionen und More Menu; View Mode beeinflusst die Changes-/Diff-Darstellung nachvollziehbar; Refresh nutzt den entprellten Status-Refresh; More Menu enthaelt nur erlaubte Git/GitHub-Aktionen.
 - Implementierungsnotiz: Toolbar an Cursor/VS-Code-Source-Control orientieren, aber keine Projektbaum-, Terminal-, Task-Runner- oder Dashboard-Aktionen aufnehmen.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 14:26 CEST umgesetzt: Source-Control rendert jetzt eine kompakte Toolbar mit Refresh, Commit, ausgewaehlten Dateiaktionen, Split/List/Diff-View-Modes und einem More-Menu fuer erlaubte Sync-, Stash- und PR-Refresh-Aktionen. View Modes schalten die Changes-/Diff-Darstellung per Tab-Kontext um; Toolbar-Refresh nutzt den bestehenden Repository-State-Refresh. Fokussierter Main-UI-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. Source-Control-Toolbar, Refresh, Commit-/Dateiaktionen, Split/List/Diff-View-Modes und More-Menu fuer erlaubte Sync-, Stash- und PR-Refresh-Aktionen sind im Repository-UI verdrahtet; die View-Modes beeinflussen Changes-/Diff-Anzeige pro Tab-Kontext und Toolbar-Refresh nutzt den bestehenden Repository-State-Refresh. Fokussierte Main-UI-Tests sowie die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T46 - GitHub Remote-Erkennung und PR-API-Grundlage bauen
@@ -373,22 +376,24 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T29 - GitHub PR-Status und Checks anzeigen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T46`, `T47`
 - Definition of Done: Fuer erkannte oder erstellte PRs werden PR-Status, Checks, Check-Ergebnisse und Links zu den Detailseiten angezeigt; laufende, erfolgreiche, fehlgeschlagene und unbekannte Check-Zustaende sind unterscheidbar; Rate-Limit-, Berechtigungs- und Netzwerkfehler werden lesbar angezeigt.
 - Implementierungsnotiz: Checks nur anzeigen und oeffnen. Kein Actions-Dashboard Deluxe, keine Workflow-Steuerung und keine CI-Logs als eigenes Produktmodul.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 14:18 CEST umgesetzt: GitHub-Client und Renderer-Bridge laden PR-Commit-Statuses und Check-Runs tokenfrei, normalisieren laufende/erfolgreiche/fehlgeschlagene/unbekannte Zustaende sowie Rate-Limit-/Berechtigungs-/Netzwerk-/API-Fehler. Die bestehende PR-UI zeigt fuer erkannte oder erstellte PRs Check-Zusammenfassung, einzelne Status-/Check-Ergebnisse und Links zu Detailseiten; Git Output enthaelt die Check-Zusammenfassung. Fokussierte GitHub-/Main-Tests und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. PR-Status und Checks werden fuer erkannte und erstellte PRs ueber Commit-Status und Check-Runs geladen, in laufende/erfolgreiche/fehlgeschlagene/unbekannte Zustaende normalisiert, mit Detail-Links im Repository-UI angezeigt und inklusive lesbarer Rate-Limit-, Berechtigungs- und Netzwerk/API-Fehler im Git Output protokolliert. Fokussierte GitHub-/Main-Tests sowie die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T30 - GitHub Review-Kommentare und Issue-Links anzeigen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T46`, `T47`
 - Definition of Done: Review-Kommentare der erkannten PR werden angezeigt oder zur GitHub-Ansicht verlinkt; Issue-Nummern aus Branch-Namen und Commit-Messages werden erkannt und als GitHub-Links angeboten; nicht gefundene Issues, fehlende Berechtigungen und API-Fehler werden verstaendlich behandelt.
 - Implementierungsnotiz: Nur Verknuepfung und Anzeige fuer Versionskontrolle. Keine Issue-Verwaltung, keine Discussions, keine Wiki-Funktionen und keine Notifications-Zentrale.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 14:11 CEST umgesetzt: GitHub-Client und Renderer-Bridge laden PR-Review-Kommentare tokenfrei, erkennen Issue-Nummern aus Branch-Namen und Commit-History, pruefen Issue-Links inklusive nicht gefundener oder nicht sichtbarer Issues und zeigen Review-Kontext, Kommentarlinks, Issue-Links sowie Fehler im Repository-UI und Git Output an. Fokussierte GitHub-/Main-Tests bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. GitHub-Client und Renderer-Bridge laden PR-Review-Kommentare, erkennen Issue-Nummern aus Branch-Namen und Commit-History, pruefen Issue-Links inklusive nicht gefundener oder nicht sichtbarer Issues und zeigen Review-Kontext, Kommentarlinks, Issue-Links sowie API-/Berechtigungsfehler im Repository-UI und Git Output an. Fokussierte GitHub-/Main-Tests sowie die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T31 - Merge/Rebase-Basisumfang entscheiden
@@ -422,13 +427,43 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 - Review-Ergebnis: Bestanden am 2026-06-03. `docs/desktop-runtime-decision.md` waehlt Tauri als Desktop-Shell und bewertet Tauri/Electron gegen Git CLI, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth, sichere Token-Speicherung, Packaging, Updates und UI-Wiederverwendung; `docs/plan.md` und `docs/architecture.md` beschreiben Web-Prototyp plus Tauri-Desktop-Ziel mit kontrollierter Bridge konsistent.
 - Offene Review-Punkte: -
 
-### T34 - Desktop-Shell fuer Full UI vorbereiten
+### T48 - Tauri-Shell fuer bestehende Full UI anlegen
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T33`, `T4`, `T6`, `T8`, `T38`
-- Definition of Done: Die bestehende Web-UI laeuft innerhalb einer lokalen Desktop-Shell; Git CLI, Dateiwatcher, lokale Ordnerauswahl und GitHub Auth sind ueber eine kontrollierte Bridge erreichbar; Full UI entspricht funktional der Web-Version.
-- Implementierungsnotiz: Keine direkte Node- oder Shell-Freiheit im Renderer exponieren. Bridge nur fuer whitelisted Git/GitHub/Filesystem-Aktionen. Bestehende UI-Komponenten wiederverwenden.
+- Abhaengigkeiten: `T33`, `T4`
+- Definition of Done: Ein Tauri-Projektgeruest startet die bestehende Web-/HTML-UI in einem Desktop-Fenster; Dev- und Build-Startpunkte sind dokumentiert; Fenster-, Asset- und Security-Konfiguration sind auf die Full UI beschraenkt; der Renderer erhaelt keine direkte Node-, Shell- oder freie Dateisystem-Schnittstelle; bestehende leere und fehlerhafte Startzustaende bleiben sichtbar.
+- Implementierungsnotiz: Zuerst die Shell ohne neue Produktflaeche anlegen. Bestehende UI-Dateien wiederverwenden und keine Desktop-spezifischen Features in den Renderer mischen, bevor der Bridge-Vertrag steht.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T49 - Kontrollierten Desktop-Bridge-Vertrag fuer Git und Repository-State bauen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T6`, `T7`, `T8`, `T48`
+- Definition of Done: Die Tauri-Bridge bietet nur explizit whitelisted Commands fuer Repository oeffnen, Git-Status, Diff, Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen und Git Output; alle Git-Ausfuehrungen nutzen den bestehenden Git CLI Wrapper und die Operation Queue; stdout, stderr, Exit-Code und strukturierte Fehler folgen dem dokumentierten Fehlervertrag; Renderer-Code nutzt eine gemeinsame Bridge-Fassade statt direkter Shell- oder Dateisystemzugriffe.
+- Implementierungsnotiz: Bridge-API klein und versionskontrollbezogen halten. Keine freien Command-Runner, keine generische Filesystem-API und keine Token-Werte an den Renderer liefern.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T50 - Native Ordnerdialoge und Desktop-Watcher verdrahten
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T9`, `T39`, `T40`, `T49`
+- Definition of Done: Repo oeffnen, Clone-Zielordner und Publish-Zielordner nutzen native Desktop-Dialoge ueber erlaubte Bridge-Commands; abgebrochene, ungueltige und nicht mehr vorhandene Pfade werden lesbar behandelt; pro geoeffnetem Repository startet ein Desktop-faehiger Status-Watcher und wird beim Tab-Schliessen beendet; Watcher-Refreshes bleiben entprellt und kollidieren nicht mit laufenden Git-Operationen.
+- Implementierungsnotiz: Dialoge duerfen nur konkrete Pfade fuer erlaubte Git-Flows liefern. Watcher und Refresh sollen denselben Repository-State wie die Full UI aktualisieren.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T51 - GitHub Auth-Bridge und Full-UI-Paritaet im Desktop abschliessen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T38`, `T41`, `T42`, `T43`, `T46`, `T47`, `T29`, `T30`, `T50`
+- Definition of Done: Die Desktop-Full-UI nutzt fuer GitHub Login, Logout, Auth-Status, User-Repos, Publish, PR-Erstellung, PR-Checks und Review-Kommentare ausschliesslich die Tauri-/Backend-Bridge; Tokens bleiben ausserhalb von Renderer, localStorage, Repository-Kontexten und Git-Argumenten; die Full UI erreicht funktionale Paritaet zur bestehenden Web-Version fuer Open, Clone, Publish, Source Control, Branch, Sync, Stash, PR und Checks; verbleibende Desktop-spezifische Luecken sind dokumentiert.
+- Implementierungsnotiz: GitHub Auth gemaess `docs/github-auth-decision.md` umsetzen. HTTPS/Git Credential Manager priorisieren, kein eigenes SSH-Key-Management und keine GitHub-Dashboard-Funktionen aufnehmen.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -446,7 +481,7 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T34`, `T44`
+- Abhaengigkeiten: `T51`, `T44`
 - Definition of Done: Die Desktop-App bietet gemaess `T44` ein kleines Floating Window fuer den aktiven Repository-Kontext; es zeigt Repository, Branch, Change-Zaehler, Status/Fehler und kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; alle Aktionen nutzen denselben Repository-State und dieselbe Operation Queue wie die Full UI und fuehren nicht zu doppelten Git-Operationen oder versteckten Fehlern.
 - Implementierungsnotiz: Floating Window ist der kompakte Desktop-Modus. Es soll schnell erreichbar sein und wenig Flaeche einnehmen, aber keine wichtigen Git-Fehler verstecken.
 - Review-Ergebnis: -
@@ -456,7 +491,7 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T34`, `T45`
+- Abhaengigkeiten: `T51`, `T45`
 - Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
 - Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
 - Review-Ergebnis: -
