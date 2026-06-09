@@ -1903,6 +1903,7 @@
     };
     tab.entryStatus = result.ok ? "Publish preflight ready" : "Publish preflight blocked";
     tab.error = result.ok ? null : result.error || null;
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
     setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Publish preflight ready." : "Publish preflight blocked."));
     render();
   }
@@ -1933,14 +1934,35 @@
     return {
       ok: Boolean(result.ok),
       action: result.action || command.action || "git",
-      command: command.display || (args.length > 0 ? `git ${args.join(" ")}` : "git"),
+      command: gitOutputCommandLabel(result, command, args),
       stdout: result.stdout || "",
       stderr: result.stderr || "",
       exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
       message: result.message || "",
       error: result.error || null,
+      details: gitOutputDetails(result),
       completedAt: new Date().toISOString()
     };
+  }
+
+  function gitOutputCommandLabel(result, command, args) {
+    if (command.display) return command.display;
+    if (result.action === "publish-preflight") return "Publish preflight";
+    if (args.length > 0) return `git ${args.join(" ")}`;
+    return "git";
+  }
+
+  function gitOutputDetails(result) {
+    const details = [];
+    if (result.error && result.error.kind) {
+      details.push(`${result.error.kind}: ${result.error.message || result.message || "Action failed."}`);
+    }
+    if (Array.isArray(result.checks)) {
+      result.checks.forEach((check) => {
+        details.push(`${check.ok ? "OK" : "Blocked"}: ${check.label || "Check"} - ${check.message || ""}`);
+      });
+    }
+    return details;
   }
 
   function confirmDiscard(selected) {
@@ -2536,7 +2558,7 @@
           <div class="commit-status ${status.status === "succeeded" ? "success" : "running"}">Git init for this folder has been explicitly selected and is waiting for the publish runner.</div>
         ` : ""}
         ${remotes.length > 0 ? `
-          <div class="commit-status error">Existing remotes: ${escapeHtml(remotes.join(", "))}</div>
+          <div class="commit-status error">Existing remotes: ${escapeHtml(remotes.join(", "))}. Source Companion will not overwrite or replace remotes automatically.</div>
         ` : ""}
       </section>
     `;
@@ -2947,6 +2969,11 @@
           <span>${escapeHtml(status)}</span>
         </div>
         <div class="git-output-message">${escapeHtml(entry.message || "")}</div>
+        ${Array.isArray(entry.details) && entry.details.length > 0 ? `
+          <div class="git-output-details">
+            ${entry.details.map((detail) => `<span>${escapeHtml(detail)}</span>`).join("")}
+          </div>
+        ` : ""}
         ${raw ? `<pre>${escapeHtml(raw)}</pre>` : ""}
       </article>
     `;

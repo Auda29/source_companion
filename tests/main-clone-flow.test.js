@@ -192,6 +192,80 @@ test("publish dialog prepares preflight without starting publish", async () => {
   assert.equal(publishStarted, false);
 });
 
+test("publish preflight output stays visible with remote overwrite warning", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const publishForm = new FakeForm("publish", {
+    path: "C:\\code\\project",
+    name: "project",
+    description: "",
+    visibility: "private",
+    initIfNeeded: ""
+  });
+  const document = new FakeDocument([publishForm]);
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionGitHubClientInstance: {
+        getAuthStatus: async () => ({
+          authenticated: true,
+          user: "octo"
+        })
+      },
+      SourceCompanionRepositoryPublishActions: {
+        preparePublishPreflight: (request) => ({
+          ok: false,
+          action: "publish-preflight",
+          request,
+          command: null,
+          checks: [
+            {
+              id: "remote-inspection",
+              label: "Remote configuration",
+              ok: true,
+              message: "Existing remotes were inspected."
+            }
+          ],
+          remotes: ["origin"],
+          stdout: "",
+          stderr: "",
+          exitCode: null,
+          message: "This repository already has a remote. Review the remote before publishing.",
+          error: {
+            kind: "remote-already-configured",
+            message: "Existing remotes must be reviewed before publishing."
+          }
+        }),
+        runPublishAction: () => {
+          throw new Error("publish runner should not start during preflight");
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await publishForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  const workspace = document.getElementById("workspaceContent").innerHTML;
+  assert.match(workspace, /Git Output/);
+  assert.match(workspace, /Publish preflight/);
+  assert.match(workspace, /remote-already-configured/);
+  assert.match(workspace, /will not overwrite or replace remotes automatically/);
+});
+
 class FakeStorage {
   constructor() {
     this.values = new Map();

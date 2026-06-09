@@ -19,13 +19,15 @@ Wenn ein Task von einem Agenten oder manuell bearbeitet wird, gilt eine strikte 
 
 Stand 2026-06-03: Die vorherigen Sammelaufgaben `T1` bis `T10` wurden in kleinere, umsetzbare Aufgaben aufgeteilt. Der Inhalt der Sammelaufgaben ist in den folgenden Tasks erhalten; die Sammelaufgaben wurden entfernt, damit Implementierung und Review nicht gegen zu grosse Akzeptanzkriterien laufen.
 
-Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere Todo-Aufgaben ersetzt. GitHub PR/Checks/Kommentare sind jetzt in `T28` bis `T30` getrennt; Merge/Rebase ist in Scope-Entscheidung `T31` und optionale Umsetzung `T32` getrennt.
+Stand 2026-06-03: Die zu breiten Aufgaben `T22` und `T27` wurden durch kleinere Todo-Aufgaben ersetzt. GitHub PR/Checks/Kommentare wurden zunaechst in `T28` bis `T30` getrennt; Merge/Rebase ist in Scope-Entscheidung `T31` und optionale Umsetzung `T32` getrennt.
 
 Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discard muss bei gemischten Datei-Zustaenden wie `MM` den ausgewaehlten Bucket respektieren, damit Worktree-Discard nicht versehentlich staged Inhalt verliert. `T13` bleibt im Review, sollte aber erst nach dem `T12`-Fix final abgenommen werden.
 
 Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37` und `T38` ersetzt, damit Auth-/Token-Speicherentscheidung und API-Implementierung getrennt reviewbar sind. Die gemischte Clone-Aufgabe `T19` wurde durch `T39` und `T40` ersetzt, damit URL-Clone nicht unnoetig von GitHub Auth blockiert wird.
 
 Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43` ersetzt, damit GitHub-Repo-Erstellung, Publish-Vorbedingungen und Remote/Push-Ausfuehrung getrennt reviewbar sind. Die kombinierte Konzept-/Umsetzungsaufgabe `T35` wurde durch `T44` und `T45` ersetzt.
+
+Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetzt, damit GitHub-Remote-/PR-API-Grundlage und PR-UI-Flow getrennt reviewbar sind.
 
 ## Aufgaben
 
@@ -285,13 +287,13 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 ### T43 - Publish-Runner mit Remote-Schutz und Initial Push bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T7`, `T16`, `T41`, `T42`
 - Definition of Done: Der Publish-Runner erstellt das GitHub-Repository, initialisiert bei bestaetigtem Ordner-ohne-Git das lokale Git-Repo, setzt `origin` nur nach klarer Remote-Pruefung, ueberschreibt vorhandene Remotes nie still, fuehrt den initialen Push bzw. Publish Branch aus und oeffnet oder aktualisiert danach den Repository-Tab; Fortschritt, Erfolg, GitHub-Fehler, Git-Fehler und rohe Ausgaben sind im UI sichtbar.
 - Implementierungsnotiz: Git-Kommandos laufen nur ueber den whitelisted Git Wrapper und die Operation Queue. HTTPS/Git Credential Manager priorisieren; kein Token in Remote-URLs oder Git-Argumente schreiben; SSH-Fehler auf das lokale Git/SSH-Setup zurueckfuehren.
 - Notiz: Publish-Runner erstellt das GitHub-Repository ueber den GitHub-Client, prueft vorhandene Remotes vor `origin`-Setzung, initialisiert Git nur bei bestaetigtem Ordner-ohne-Git, pusht den aktuellen Branch per whitelisted Git Wrapper und liefert Fortschritt, rohe Ausgaben sowie GitHub-/Git-Fehler an die UI. Fokussierte Publish-/Dialog-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. `runPublishAction` erstellt das GitHub-Repository ueber den GitHub-Client, initialisiert Git nur bei bestaetigtem Ordner-ohne-Git, prueft vorhandene Remotes vor `origin`-Setzung, verweigert stilles Remote-Ueberschreiben, setzt `origin` ohne Token in Git-Argumenten und pusht den aktuellen Branch ueber den whitelisted Git Wrapper; die UI oeffnet bzw. aktualisiert nach Erfolg den Repository-Tab und zeigt Fortschritt, Fehler sowie rohe Ausgaben. Fokussierte Publish-/Dialog-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T21 - Einklappbaren Graph/History-Bereich bauen
@@ -306,21 +308,23 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 ### T23 - Git Output, Fehlertexte und Sicherheitswarnungen fertigstellen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T7`, `T12`, `T14`, `T15`, `T16`, `T43`
 - Definition of Done: Git Output ist jederzeit erreichbar; GitHub- und Git-Fehler sind lesbar; gefaehrliche Aktionen haben bestaetigte Warnungen fuer Discard, Amend, Branch loeschen, Remote ueberschreiben und Public Publish; rohe Ausgaben bleiben einsehbar, sind aber nicht die einzige Nutzererklaerung.
 - Implementierungsnotiz: Keine versteckten Automatismen wie Auto-Commit, Auto-Push oder Auto-Publish.
-- Review-Ergebnis: -
+- Notiz: Publish-Preflight-Ergebnisse werden jetzt im Git Output protokolliert, inklusive lesbarer Fehlerdetails und Preflight-Checks; bestehende Remote-Konfigurationen zeigen im Publish-Panel explizit, dass Source Companion Remotes nicht automatisch ueberschreibt oder ersetzt. Bestehende bestaetigte Warnungen fuer Discard, Amend, Branch loeschen und Public Publish bleiben erhalten. Fokussierte Main-/Publish-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. Git Output bleibt ueber den Repository-Kontext erreichbar und enthaelt jetzt auch Publish-Preflight-Ergebnisse mit lesbaren Fehlerdetails und Check-Zusammenfassung; GitHub-/Git-Fehler werden nicht nur als rohe Ausgabe angezeigt, und bestaetigte Warnungen fuer Discard, Amend, Branch loeschen, Remote-Schutz und Public Publish sind vorhanden. Fokussierte Main-/Publish-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T24 - Kernflows testen und Review-Checkliste dokumentieren
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T28`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
+- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
+- Notiz: 2026-06-09 11:30 CEST erneut nicht umgesetzt, weil T24 von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -344,12 +348,22 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
-### T28 - GitHub Remote-Erkennung und PR-Erstellung bauen
+### T46 - GitHub Remote-Erkennung und PR-API-Grundlage bauen
 
 - Status: `todo`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T16`, `T38`
-- Definition of Done: GitHub-Remote wird aus den Git-Remotes des aktiven Repository-Kontexts erkannt; vorhandene PR fuer den aktuellen Branch wird angezeigt oder verlinkt; neue PR kann mit Base-Branch, Titel und Beschreibung erstellt werden; PR im Browser oder GitHub-UI kann geoeffnet werden; fehlende Auth, fehlende Remote-Zuordnung und API-Fehler werden lesbar angezeigt.
+- Definition of Done: GitHub-Remote wird aus den Git-Remotes des aktiven Repository-Kontexts erkannt und in Owner/Repository, Remote-Name und URL normalisiert; HTTPS- und SSH-GitHub-URLs werden unterstuetzt; nicht-GitHub-Remotes und mehrdeutige Remotes liefern lesbare Zustaende; der GitHub API Client kann vorhandene PRs fuer den aktuellen Branch laden und neue PRs mit Base-Branch, Titel und Beschreibung erstellen; fehlende Auth, fehlende Remote-Zuordnung, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert zurueckgegeben.
+- Implementierungsnotiz: API-Methoden und Remote-Erkennung ohne UI-Spezialfaelle kapseln. Keine Issue Board-, Kanban-, Notification- oder Dashboard-Funktionen aufnehmen.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T47 - GitHub PR-Erstellung im Repository-UI verdrahten
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T46`
+- Definition of Done: Aktiver Repository-Kontext zeigt die erkannte GitHub-Remote-Zuordnung; eine vorhandene PR fuer den aktuellen Branch wird angezeigt oder verlinkt; neue PR kann mit Base-Branch, Titel und Beschreibung aus dem UI erstellt werden; gewaehlte Base und Head sind vor Ausfuehrung sichtbar; erstellte oder vorhandene PR kann im Browser oder in der GitHub-UI geoeffnet werden; Lade-, Erfolgs- und Fehlerzustaende sind im Repository-Kontext und Git Output sichtbar.
 - Implementierungsnotiz: GitHub-Funktionen bleiben auf Versionskontrolle begrenzt. Kein Issue Board, kein Kanban, keine Notifications-Zentrale und kein allgemeines GitHub-Dashboard.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
@@ -358,7 +372,7 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T28`
+- Abhaengigkeiten: `T46`, `T47`
 - Definition of Done: Fuer erkannte oder erstellte PRs werden PR-Status, Checks, Check-Ergebnisse und Links zu den Detailseiten angezeigt; laufende, erfolgreiche, fehlgeschlagene und unbekannte Check-Zustaende sind unterscheidbar; Rate-Limit-, Berechtigungs- und Netzwerkfehler werden lesbar angezeigt.
 - Implementierungsnotiz: Checks nur anzeigen und oeffnen. Kein Actions-Dashboard Deluxe, keine Workflow-Steuerung und keine CI-Logs als eigenes Produktmodul.
 - Review-Ergebnis: -
@@ -368,7 +382,7 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T28`
+- Abhaengigkeiten: `T46`, `T47`
 - Definition of Done: Review-Kommentare der erkannten PR werden angezeigt oder zur GitHub-Ansicht verlinkt; Issue-Nummern aus Branch-Namen und Commit-Messages werden erkannt und als GitHub-Links angeboten; nicht gefundene Issues, fehlende Berechtigungen und API-Fehler werden verstaendlich behandelt.
 - Implementierungsnotiz: Nur Verknuepfung und Anzeige fuer Versionskontrolle. Keine Issue-Verwaltung, keine Discussions, keine Wiki-Funktionen und keine Notifications-Zentrale.
 - Review-Ergebnis: -

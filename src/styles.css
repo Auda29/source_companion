@@ -1111,6 +1111,13 @@ textarea {
   font-size: 12px;
 }
 
+.git-output-details {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .git-output-entry pre {
   max-height: 180px;
   margin: 0;
