@@ -16,6 +16,15 @@
     repositorySyncActionRunner: resolveRepositorySyncActionRunner(),
     repositoryStashActionRunner: resolveRepositoryStashActionRunner(),
     repositoryCloneActionRunner: resolveRepositoryCloneActionRunner(),
+    githubClient: resolveGitHubClient(),
+    githubAuth: noGitHubAuthStatus(),
+    githubRepositories: {
+      status: "idle",
+      query: "",
+      items: [],
+      selected: null,
+      error: null
+    },
     repositoryStatusWatcher: null
   };
   state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
@@ -32,15 +41,15 @@
   const messageHost = document.getElementById("messageHost");
   const workspaceContent = document.getElementById("workspaceContent");
   const clearRecentButton = document.getElementById("clearRecentButton");
+  const githubAuthStatus = document.getElementById("githubAuthStatus");
+  const githubRepoList = document.getElementById("githubRepoList");
+  const githubRepoSearch = document.getElementById("githubRepoSearch");
+  const githubRepositoryName = document.getElementById("githubRepositoryName");
+  const githubSelectedUrl = document.getElementById("githubSelectedUrl");
 
   document.querySelectorAll("[data-open-dialog]").forEach((button) => {
     button.addEventListener("click", () => {
-      const dialog = dialogs[button.dataset.openDialog];
-      if (dialog) {
-        dialog.showModal();
-        const input = dialog.querySelector("input");
-        if (input) input.focus();
-      }
+      openDialog(button.dataset.openDialog);
     });
   });
 
@@ -69,7 +78,57 @@
     render();
   });
 
+  if (dialogs.github) {
+    dialogs.github.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!target) return;
+
+      const authTarget = target.closest ? target.closest("[data-github-auth-action]") : target;
+      if (authTarget && authTarget.dataset && authTarget.dataset.githubAuthAction) {
+        runGitHubAuthAction(authTarget.dataset.githubAuthAction);
+      }
+
+      const searchTarget = target.closest ? target.closest("[data-github-repo-search]") : target;
+      if (searchTarget && searchTarget.dataset &&
+        Object.prototype.hasOwnProperty.call(searchTarget.dataset, "githubRepoSearch")) {
+        searchGitHubRepositories();
+      }
+
+      const repoTarget = target.closest ? target.closest("[data-github-repo-name]") : target;
+      if (repoTarget && repoTarget.dataset && repoTarget.dataset.githubRepoName) {
+        selectGitHubRepository({
+          fullName: repoTarget.dataset.githubRepoName,
+          cloneUrl: repoTarget.dataset.githubRepoCloneUrl || ""
+        });
+      }
+    });
+  }
+
+  if (githubRepoSearch) {
+    githubRepoSearch.addEventListener("input", () => {
+      state.githubRepositories.query = githubRepoSearch.value;
+      renderGitHubDialog();
+    });
+  }
+
   render();
+  refreshGitHubAuthStatus("startup");
+
+  function openDialog(name) {
+    const dialog = dialogs[name];
+    if (!dialog) return;
+
+    if (name === "github") {
+      renderGitHubDialog();
+      if (state.githubClient && state.githubAuth.status === "idle") {
+        refreshGitHubAuthStatus("dialog");
+      }
+    }
+
+    dialog.showModal();
+    const input = dialog.querySelector("input");
+    if (input) input.focus();
+  }
 
   function handleFlow(flow, formData) {
     if (flow === "open") {
@@ -81,7 +140,8 @@
     }
 
     if (flow === "github") {
-      const name = clean(formData.get("name"));
+      const selected = state.githubRepositories.selected;
+      const name = clean(formData.get("name")) || (selected ? selected.fullName : "");
       const target = clean(formData.get("target"));
       if (!name.includes("/") || !isAbsolutePath(target)) {
         setMessage("error", "Enter owner/repository and an absolute target folder.");
@@ -133,11 +193,10 @@
       return false;
     }
 
-    const repoName = repoNameFromUrl(url);
     openCloneRepository({
       url,
-      targetPath: joinPath(target, repoName),
-      displayName: repoName
+      targetPath: target,
+      displayName: displayNameFromPath(target)
     });
     return true;
   }
@@ -325,7 +384,7 @@
       `;
 
       workspaceContent.querySelectorAll("[data-open-dialog]").forEach((button) => {
-        button.addEventListener("click", () => dialogs[button.dataset.openDialog].showModal());
+        button.addEventListener("click", () => openDialog(button.dataset.openDialog));
       });
       return;
     }
@@ -532,6 +591,7 @@
           const current = state.tabs.find((item) => item.id === tab.id);
           return current ? current.operations : tab.operations;
         },
+        githubAuthProvider: () => state.githubAuth,
         onState: (loaded) => {
           applyRepositoryState(tab.id, loaded, "idle");
         },
@@ -584,7 +644,8 @@
     try {
       const loaded = await loadRepositoryState({
         repositoryPath: tab.path,
-        operations: tab.operations
+        operations: tab.operations,
+        githubAuth: state.githubAuth
       });
       applyRepositoryState(tabId, loaded, "idle");
     } catch (error) {
@@ -623,6 +684,203 @@
     };
 
     render();
+  }
+
+  async function refreshGitHubAuthStatus(reason) {
+    if (!state.githubClient || typeof state.githubClient.getAuthStatus !== "function") {
+      state.githubAuth = noGitHubAuthStatus({
+        kind: "github-login-unavailable",
+        message: "GitHub login is not available in this runtime."
+      });
+      renderGitHubDialog();
+      return;
+    }
+
+    state.githubAuth = {
+      ...state.githubAuth,
+      status: "running",
+      error: null,
+      reason
+    };
+    renderGitHubDialog();
+
+    try {
+      state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.getAuthStatus());
+    } catch (error) {
+      state.githubAuth = noGitHubAuthStatus({
+        kind: "github-auth-error",
+        message: error && error.message ? error.message : "GitHub auth status could not be loaded."
+      });
+    }
+
+    renderGitHubDialog();
+    refreshOpenRepositoryGitHubState();
+  }
+
+  async function runGitHubAuthAction(action) {
+    if (!state.githubClient) {
+      state.githubAuth = noGitHubAuthStatus({
+        kind: "github-login-unavailable",
+        message: "GitHub login is not available in this runtime."
+      });
+      renderGitHubDialog();
+      return;
+    }
+
+    state.githubAuth = {
+      ...state.githubAuth,
+      status: "running",
+      error: null
+    };
+    renderGitHubDialog();
+
+    try {
+      if (action === "login" && typeof state.githubClient.login === "function") {
+        state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.login());
+      } else if (action === "logout" && typeof state.githubClient.logout === "function") {
+        state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.logout());
+        state.githubRepositories.items = [];
+        state.githubRepositories.selected = null;
+      } else {
+        state.githubAuth = noGitHubAuthStatus({
+          kind: "github-login-unavailable",
+          message: "GitHub auth action is not available in this runtime."
+        });
+      }
+    } catch (error) {
+      state.githubAuth = noGitHubAuthStatus({
+        kind: "github-auth-error",
+        message: error && error.message ? error.message : "GitHub auth action failed."
+      });
+    }
+
+    renderGitHubDialog();
+    refreshOpenRepositoryGitHubState();
+  }
+
+  async function searchGitHubRepositories() {
+    const query = githubRepoSearch ? githubRepoSearch.value : state.githubRepositories.query;
+    state.githubRepositories = {
+      ...state.githubRepositories,
+      status: "running",
+      query,
+      error: null
+    };
+    renderGitHubDialog();
+
+    if (!state.githubClient || typeof state.githubClient.searchUserRepositories !== "function") {
+      state.githubRepositories = {
+        ...state.githubRepositories,
+        status: "failed",
+        items: [],
+        error: {
+          kind: "github-api-unavailable",
+          message: "GitHub repository search is not available in this runtime."
+        }
+      };
+      renderGitHubDialog();
+      return;
+    }
+
+    try {
+      const result = await state.githubClient.searchUserRepositories({ query });
+      state.githubRepositories = {
+        ...state.githubRepositories,
+        status: result.ok ? "idle" : "failed",
+        items: result.ok ? result.repositories : [],
+        selected: result.ok ? state.githubRepositories.selected : null,
+        error: result.ok ? null : result.error
+      };
+    } catch (error) {
+      state.githubRepositories = {
+        ...state.githubRepositories,
+        status: "failed",
+        items: [],
+        error: {
+          kind: "github-api-error",
+          message: error && error.message ? error.message : "GitHub repositories could not be loaded."
+        }
+      };
+    }
+
+    renderGitHubDialog();
+  }
+
+  function selectGitHubRepository(repo) {
+    state.githubRepositories.selected = repo;
+    if (githubRepositoryName) {
+      githubRepositoryName.value = repo.fullName;
+    }
+    renderGitHubDialog();
+  }
+
+  function renderGitHubDialog() {
+    if (!githubAuthStatus || !githubRepoList) return;
+
+    const auth = state.githubAuth || noGitHubAuthStatus();
+    const runningAuth = auth.status === "running";
+    const loginLabel = auth.authenticated ? `Logged in as ${auth.user || "GitHub user"}` : "Not logged in";
+    const authError = auth.error ? `<span>${escapeHtml(auth.error.kind)}: ${escapeHtml(auth.error.message)}</span>` : "";
+    githubAuthStatus.innerHTML = `
+      <strong>${escapeHtml(loginLabel)}</strong>
+      ${authError}
+      ${auth.tokenSource ? `<small>${escapeHtml(auth.tokenSource)}</small>` : ""}
+    `;
+
+    dialogs.github.querySelectorAll("[data-github-auth-action]").forEach((button) => {
+      const action = button.dataset.githubAuthAction;
+      button.disabled = runningAuth || !state.githubClient || (action === "logout" && !auth.authenticated);
+    });
+
+    const selected = state.githubRepositories.selected;
+    if (githubSelectedUrl) {
+      githubSelectedUrl.textContent = selected && selected.cloneUrl ? `Clone URL: ${selected.cloneUrl}` : "";
+    }
+
+    const status = state.githubRepositories.status;
+    if (!auth.authenticated) {
+      githubRepoList.innerHTML = '<div class="github-repo-empty">GitHub login is required to load repositories.</div>';
+      return;
+    }
+
+    if (status === "running") {
+      githubRepoList.innerHTML = '<div class="github-repo-empty">Loading GitHub repositories.</div>';
+      return;
+    }
+
+    if (state.githubRepositories.error) {
+      githubRepoList.innerHTML = `
+        <div class="github-repo-error">
+          <strong>${escapeHtml(state.githubRepositories.error.kind || "github-api-error")}</strong>
+          <span>${escapeHtml(state.githubRepositories.error.message || "GitHub repositories could not be loaded.")}</span>
+        </div>
+      `;
+      return;
+    }
+
+    const repos = state.githubRepositories.items;
+    if (!repos.length) {
+      githubRepoList.innerHTML = '<div class="github-repo-empty">No repositories loaded.</div>';
+      return;
+    }
+
+    githubRepoList.innerHTML = repos.slice(0, 20).map((repo) => `
+      <button class="github-repo-item${selected && selected.fullName === repo.fullName ? " selected" : ""}" type="button" data-github-repo-name="${escapeHtml(repo.fullName)}" data-github-repo-clone-url="${escapeHtml(repo.cloneUrl)}">
+        <span>
+          <strong>${escapeHtml(repo.fullName)}</strong>
+          <small>${escapeHtml(repo.description || "No description")}</small>
+        </span>
+        <span class="status-pill ${repo.private ? "warning" : "ready"}">${escapeHtml(repo.visibility || (repo.private ? "private" : "public"))}</span>
+      </button>
+    `).join("");
+  }
+
+  function refreshOpenRepositoryGitHubState() {
+    state.tabs.forEach((tab) => {
+      if (tab.github) {
+        refreshRepositoryState(tab.id, "github-auth");
+      }
+    });
   }
 
   function selectChange(tabId, changeKeyValue) {
@@ -1679,6 +1937,38 @@
     return null;
   }
 
+  function resolveGitHubClient() {
+    if (window.SourceCompanionGitHubClientInstance &&
+      typeof window.SourceCompanionGitHubClientInstance.getAuthStatus === "function") {
+      return window.SourceCompanionGitHubClientInstance;
+    }
+
+    if (window.SourceCompanionGitHubClient &&
+      typeof window.SourceCompanionGitHubClient.createGitHubApiClient === "function") {
+      return window.SourceCompanionGitHubClient.createGitHubApiClient({
+        deviceFlow: window.SourceCompanionGitHubAuthBridge || null
+      });
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./github-api-client", "./src/github-api-client"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.createGitHubApiClient === "function") {
+          return loaded.createGitHubApiClient();
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
   function createId() {
     return crypto.randomUUID ? crypto.randomUUID() : `repo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
@@ -2543,6 +2833,33 @@
     state.message = { kind, text };
   }
 
+  function normalizeGitHubAuthStatus(auth) {
+    const source = auth || {};
+    return {
+      authenticated: Boolean(source.authenticated),
+      user: clean(source.user || source.login) || null,
+      login: clean(source.login || source.user) || null,
+      scopes: Array.isArray(source.scopes) ? source.scopes.map(clean).filter(Boolean) : [],
+      tokenSource: clean(source.tokenSource) || null,
+      lastValidatedAt: source.lastValidatedAt || null,
+      status: source.status || "idle",
+      error: source.error || null
+    };
+  }
+
+  function noGitHubAuthStatus(error = null) {
+    return {
+      authenticated: false,
+      user: null,
+      login: null,
+      scopes: [],
+      tokenSource: null,
+      lastValidatedAt: null,
+      status: "idle",
+      error
+    };
+  }
+
   function normalizeGitState(git) {
     const source = git || {};
     const files = Array.isArray(source.files) ? source.files : [];
@@ -2611,11 +2928,6 @@
   function displayNameFromPath(path) {
     const cleaned = clean(path).replace(/[\\/]+$/, "");
     return cleaned.split(/[\\/]/).pop() || "Repository";
-  }
-
-  function repoNameFromUrl(url) {
-    const cleaned = clean(url).replace(/\.git$/i, "");
-    return cleaned.split(/[/:]/).pop() || "repository";
   }
 
   function joinPath(parent, child) {

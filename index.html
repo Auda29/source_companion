@@ -70,7 +70,7 @@
         </label>
         <label>
           Target folder
-          <input name="target" autocomplete="off" placeholder="C:\code">
+          <input name="target" autocomplete="off" placeholder="C:\code\custom-name">
         </label>
         <menu>
           <button class="button" value="cancel">Cancel</button>
@@ -85,10 +85,24 @@
           <h2>Clone from GitHub</h2>
           <button class="icon-button" value="cancel" title="Close" aria-label="Close">x</button>
         </header>
+        <div id="githubAuthStatus" class="github-auth-status" aria-live="polite"></div>
+        <div class="github-auth-actions">
+          <button class="button" type="button" data-github-auth-action="login">GitHub Login</button>
+          <button class="button" type="button" data-github-auth-action="logout">Logout</button>
+        </div>
+        <label>
+          Search repositories
+          <span class="github-search-row">
+            <input id="githubRepoSearch" name="query" autocomplete="off" placeholder="owner or repository">
+            <button class="button" type="button" data-github-repo-search>Search</button>
+          </span>
+        </label>
+        <div id="githubRepoList" class="github-repo-list"></div>
         <label>
           Repository name
-          <input name="name" autocomplete="off" placeholder="owner/repository">
+          <input id="githubRepositoryName" name="name" autocomplete="off" placeholder="owner/repository">
         </label>
+        <div id="githubSelectedUrl" class="github-selected-url"></div>
         <label>
           Target folder
           <input name="target" autocomplete="off" placeholder="C:\code">
@@ -126,6 +140,7 @@
       </form>
     </dialog>
 
+    <script src="src/github-api-client.js"></script>
     <script src="src/main.js"></script>
   </body>
 </html>

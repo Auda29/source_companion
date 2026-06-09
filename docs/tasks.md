@@ -233,19 +233,20 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 - Abhaengigkeiten: `T37`
 - Definition of Done: GitHub Login und Logout funktionieren gemaess `T37`; Token werden ueber den entschiedenen sicheren Speicher gelesen und geschrieben; Auth-Status ist fuer Repository-Kontexte und GitHub-Aktionen abrufbar; User-Repositories koennen geladen und durchsucht werden; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert und lesbar angezeigt.
 - Implementierungsnotiz: API-Client klein halten: Login-Status, User-Repos und gemeinsame Fehlernormalisierung zuerst. PR-, Checks- und Publish-spezifische API-Methoden in den abhaengigen Tasks ergaenzen, nicht als versteckten Rundumschlag.
-- Review-Ergebnis: -
-- Offene Review-Punkte: -
+- Notiz: `src/github-api-client.js` implementiert den kleinen GitHub-Basisclient fuer Device-Login-Hook, sicheren TokenStore-Zugriff, Logout, Auth-Status, User-Repository-List/Search und normalisierte Auth-/Scope-/RateLimit-/Netzwerk-/API-Fehler; `src/main.js` loest den Client defensiv auf, reicht Auth-Status an Repository-State-Refreshes weiter und zeigt Login-/Logout-/Repo-Suche im bestehenden GitHub-Dialog. `tests/github-api-client.test.js` deckt Auth-Status, TokenStore-Schreiben/-Loeschen, Repository-Suche und Fehlernormalisierung ab.
+- Review-Ergebnis: Nicht bestanden am 2026-06-09. Basisclient, Fehlernormalisierung und Tests sind vorhanden, aber die Implementierung verletzt noch die in `T37` festgelegte Token-Grenze.
+- Offene Review-Punkte: `src/github-api-client.js` und die Verdrahtung in `src/main.js` duerfen im Renderer keinen rohen GitHub-Token empfangen, speichern oder fuer `fetch` verwenden. Aktuell erwartet `login()` ein `loginResult.token`, speichert ohne explizit injizierten Store in `MemorySecureTokenStore` und baut `Authorization: Bearer ...` im JS-Client; `resolveGitHubClient()` injiziert nur `deviceFlow`, aber keinen `SecureTokenStore`-/Backend-API-Adapter. T38 muss die T37-Grenze einhalten: Token lesen/schreiben/loeschen ueber `SecureTokenStore` bzw. backend-only Bridge, und der Renderer bekommt nur tokenfreie Auth-/Repo-/Fehlerergebnisse.
 
 ### T39 - Clone per URL bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T4`, `T6`, `T7`
 - Definition of Done: Clone Repo per URL funktioniert mit frei waehlbarem Zielordner; HTTPS-, SSH- und GitHub-URLs werden an den Git Wrapper uebergeben; Clone-Fortschritt, Erfolg und Fehler sind sichtbar; SSH-Fehler verweisen auf das vorhandene lokale Git/SSH-Setup statt eigenes SSH-Key-Management anzubieten; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
 - Implementierungsnotiz: URL-Clone darf ohne GitHub Login funktionieren. Zielordner-Auswahl und Clone-Operation muessen ueber die kontrollierte Runtime-/Bridge-Schicht laufen und duerfen keine freie Shell exposed.
-- Notiz: `src/repository-clone-actions.js` fuehrt URL-Clone ueber den whitelisted Git Wrapper aus, normalisiert Clone-Fehler inklusive SSH-Hinweis auf lokales Git/SSH-Setup und wird von `src/main.js` direkt aus dem Clone-Dialog mit sichtbarem Clone-Status, Git Output, automatischem Tab und Refresh nach Erfolg verdrahtet. `tests/repository-clone-actions.test.js` prueft Request-Bau, Validierung und einen echten Clone-Lauf ueber den Wrapper.
-- Review-Ergebnis: Re-Review nicht bestanden am 2026-06-03. Die Clone-Basisschicht und fokussierten Tests laufen, aber die UI erfuellt den Zielordner-Teil der Definition of Done nicht.
-- Offene Review-Punkte: `src/main.js` verwendet den im Clone-Dialog eingegebenen Zielordner als Parent und haengt immer `repoNameFromUrl(url)` an (`targetPath: joinPath(target, repoName)`). Dadurch kann der Nutzer den finalen Clone-Zielordner nicht frei waehlen; bei Eingabe von `C:\code\custom-name` wuerde nach `C:\code\custom-name\<repo>` geklont. T39 muss entweder den eingegebenen absoluten Zielordner unveraendert an `runCloneAction`/Git Wrapper uebergeben oder UI/Task explizit auf "Parent folder + abgeleiteter Repo-Name" aendern und entsprechend testen.
+- Notiz: Review-Punkt adressiert: Der URL-Clone-Dialog uebergibt den eingegebenen absoluten Zielordner jetzt unveraendert als finalen `targetPath` an `runCloneAction`; der Tab-Name wird aus diesem Zielpfad abgeleitet und der Platzhalter zeigt einen finalen Ordnernamen. `tests/main-clone-flow.test.js` prueft die UI-Uebergabe, `tests/repository-clone-actions.test.js` prueft weiterhin Request-Bau, Validierung und echten Clone-Lauf.
+- Review-Ergebnis: Bestanden am 2026-06-09. Der Clone-Dialog uebergibt den eingegebenen absoluten Zielordner als finalen Clone-Pfad an `runCloneAction`; HTTPS-, SSH- und GitHub-URL-Validierung bleiben ueber den kontrollierten Clone/Git-Wrapper gekapselt, Clone-Status und Fehler sind sichtbar, SSH-Fehler verweisen auf das lokale Git/SSH-Setup und erfolgreiche Clone-Laeufe oeffnen bzw. aktualisieren den Repository-Tab. Fokussierte Clone-Tests und die vollstaendige Node-Test-Suite bestanden.
+- Offene Review-Punkte: -
 
 ### T40 - Clone from GitHub bauen
 
