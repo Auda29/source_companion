@@ -1,0 +1,13 @@
+{
+  "name": "source-companion",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "desktop:assets": "node scripts/copy-desktop-assets.js",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

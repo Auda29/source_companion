@@ -322,13 +322,13 @@ Stand 2026-06-09: Die zu breite Desktop-Shell-Aufgabe `T34` wurde durch `T48` bi
 
 ### T24 - Kernflows testen und Review-Checkliste dokumentieren
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
 - Notiz: 2026-06-09 14:38 CEST umgesetzt: `docs/core-flow-review-checklist.md` dokumentiert automatisierte Basispruefung, Testabdeckung und manuelle Repro-Schritte fuer Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei-/Hunk-Staging, Commit, Amend, Branch, Pull/Push-Fehler, Stash, GitHub Auth-Fehler, PR/Checks, Review-Kommentare und ausgeschlossene Features. Vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. `docs/core-flow-review-checklist.md` deckt automatisierte Basispruefung, Testabdeckung und manuelle Repro-Schritte fuer Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei-/Hunk-Staging, Commit, Amend, Branch, Pull/Push-Fehler, Stash, GitHub Auth-Fehler, PR/Checks, Review-Kommentare und ausgeschlossene Features ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T25 - AI Commit Message Konzept ausarbeiten
@@ -429,21 +429,23 @@ Stand 2026-06-09: Die zu breite Desktop-Shell-Aufgabe `T34` wurde durch `T48` bi
 
 ### T48 - Tauri-Shell fuer bestehende Full UI anlegen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T33`, `T4`
 - Definition of Done: Ein Tauri-Projektgeruest startet die bestehende Web-/HTML-UI in einem Desktop-Fenster; Dev- und Build-Startpunkte sind dokumentiert; Fenster-, Asset- und Security-Konfiguration sind auf die Full UI beschraenkt; der Renderer erhaelt keine direkte Node-, Shell- oder freie Dateisystem-Schnittstelle; bestehende leere und fehlerhafte Startzustaende bleiben sichtbar.
 - Implementierungsnotiz: Zuerst die Shell ohne neue Produktflaeche anlegen. Bestehende UI-Dateien wiederverwenden und keine Desktop-spezifischen Features in den Renderer mischen, bevor der Bridge-Vertrag steht.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 14:53 CEST umgesetzt: Tauri-v2-Projektgeruest in `src-tauri/` angelegt, Desktop-Startpunkte in `package.json` und `docs/desktop-shell.md` dokumentiert, Asset-Kopie auf `index.html` plus `src/` nach `desktop-dist/` begrenzt und Security/Capability ohne Shell-, Dateisystem- oder Git-Bridge-Permissions gesetzt. Fokussierter Desktop-Shell-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Tauri-Build selbst wurde nicht ausgefuehrt, da Abhaengigkeiten nicht installiert sind.
+- Review-Ergebnis: Bestanden am 2026-06-09. Tauri-v2-Projektgeruest, Desktop-Startpunkte, Asset-Kopie nach `desktop-dist`, Hauptfenster-Konfiguration und Security/Capability ohne Shell-, Dateisystem- oder Git-Bridge-Permissions sind vorhanden; die bestehende Full UI bleibt als `index.html` plus `src/` die einzige Renderer-Flaeche. Fokussierter Desktop-Shell-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; der native Tauri-Build wurde mangels installierter Abhaengigkeiten nicht ausgefuehrt.
 - Offene Review-Punkte: -
 
 ### T49 - Kontrollierten Desktop-Bridge-Vertrag fuer Git und Repository-State bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T6`, `T7`, `T8`, `T48`
 - Definition of Done: Die Tauri-Bridge bietet nur explizit whitelisted Commands fuer Repository oeffnen, Git-Status, Diff, Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen und Git Output; alle Git-Ausfuehrungen nutzen den bestehenden Git CLI Wrapper und die Operation Queue; stdout, stderr, Exit-Code und strukturierte Fehler folgen dem dokumentierten Fehlervertrag; Renderer-Code nutzt eine gemeinsame Bridge-Fassade statt direkter Shell- oder Dateisystemzugriffe.
 - Implementierungsnotiz: Bridge-API klein und versionskontrollbezogen halten. Keine freien Command-Runner, keine generische Filesystem-API und keine Token-Werte an den Renderer liefern.
+- Notiz: 2026-06-09 15:10 CEST umgesetzt: `src/desktop-bridge.js` definiert die gemeinsame Renderer-Fassade, whitelisted Tauri-Command-Namen und ein testbares Backend, das Repository-State, Diff sowie Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen ueber `GitOperationQueue` und den bestehenden Git Wrapper ausfuehrt; `src/main.js` bevorzugt die Fassade vor Web-/CommonJS-Fallbacks. `docs/desktop-bridge.md` dokumentiert Methoden, Tauri-Kommandos, Fehler-/Output-Vertrag und Ausschluesse. Fokussierte Bridge-Tests und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

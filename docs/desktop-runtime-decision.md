@@ -32,8 +32,8 @@ Electron bleibt eine moegliche Ausweichoption, falls eine spaetere technische Pr
 - Floating Window und Full UI teilen denselben Repository-State und dieselbe Operation Queue.
 - Die Desktop-Shell fuegt keine neue Produktdomaene hinzu: kein Terminal, kein Projektbaum, kein Task Runner, kein Dashboard.
 
-## Folgen fuer naechste Tasks
+## Folgen fuer Desktop-Tasks
 
-- `T34` bereitet Tauri als Shell fuer die Full UI vor.
+- `T48` bereitet Tauri als Shell fuer die Full UI vor.
 - `T37` entscheidet auf dieser Grundlage den konkreten GitHub-Auth-Flow und die sichere Token-Speicherung.
 - `T38` implementiert Login, Logout, Auth-Status und User-Repos gegen diese Auth-Entscheidung.

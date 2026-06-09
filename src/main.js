@@ -1,8 +1,10 @@
 (function () {
   const STORAGE_KEY = "source-companion.recentRepositories.v1";
   const MAX_RECENT = 8;
+  const desktopBridge = resolveDesktopRepositoryBridge();
 
   const state = {
+    desktopBridge,
     recent: loadRecent(),
     tabs: [],
     activeTabId: null,
@@ -2365,6 +2367,10 @@
   }
 
   function resolveRepositoryStateLoader() {
+    if (desktopBridge && typeof desktopBridge.loadRepositoryState === "function") {
+      return desktopBridge.loadRepositoryState;
+    }
+
     if (window.SourceCompanionRepositoryState && typeof window.SourceCompanionRepositoryState.loadRepositoryState === "function") {
       return window.SourceCompanionRepositoryState.loadRepositoryState;
     }
@@ -2418,6 +2424,10 @@
   }
 
   function resolveRepositoryDiffLoader() {
+    if (desktopBridge && typeof desktopBridge.loadFileDiff === "function") {
+      return desktopBridge.loadFileDiff;
+    }
+
     if (window.SourceCompanionRepositoryDiff && typeof window.SourceCompanionRepositoryDiff.loadFileDiff === "function") {
       return window.SourceCompanionRepositoryDiff.loadFileDiff;
     }
@@ -2442,6 +2452,10 @@
   }
 
   function resolveRepositoryFileActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runFileAction === "function") {
+      return desktopBridge.runFileAction;
+    }
+
     if (window.SourceCompanionRepositoryFileActions && typeof window.SourceCompanionRepositoryFileActions.runFileAction === "function") {
       return window.SourceCompanionRepositoryFileActions.runFileAction;
     }
@@ -2466,6 +2480,10 @@
   }
 
   function resolveRepositoryHunkActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runHunkAction === "function") {
+      return desktopBridge.runHunkAction;
+    }
+
     if (window.SourceCompanionRepositoryHunkActions && typeof window.SourceCompanionRepositoryHunkActions.runHunkAction === "function") {
       return window.SourceCompanionRepositoryHunkActions.runHunkAction;
     }
@@ -2490,6 +2508,10 @@
   }
 
   function resolveRepositoryCommitActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runCommitAction === "function") {
+      return desktopBridge.runCommitAction;
+    }
+
     if (window.SourceCompanionRepositoryCommitActions && typeof window.SourceCompanionRepositoryCommitActions.runCommitAction === "function") {
       return window.SourceCompanionRepositoryCommitActions.runCommitAction;
     }
@@ -2514,6 +2536,10 @@
   }
 
   function resolveRepositoryBranchActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runBranchAction === "function") {
+      return desktopBridge.runBranchAction;
+    }
+
     if (window.SourceCompanionRepositoryBranchActions && typeof window.SourceCompanionRepositoryBranchActions.runBranchAction === "function") {
       return window.SourceCompanionRepositoryBranchActions.runBranchAction;
     }
@@ -2538,6 +2564,10 @@
   }
 
   function resolveRepositorySyncActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runSyncAction === "function") {
+      return desktopBridge.runSyncAction;
+    }
+
     if (window.SourceCompanionRepositorySyncActions && typeof window.SourceCompanionRepositorySyncActions.runSyncAction === "function") {
       return window.SourceCompanionRepositorySyncActions.runSyncAction;
     }
@@ -2562,6 +2592,10 @@
   }
 
   function resolveRepositoryStashActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runStashAction === "function") {
+      return desktopBridge.runStashAction;
+    }
+
     if (window.SourceCompanionRepositoryStashActions && typeof window.SourceCompanionRepositoryStashActions.runStashAction === "function") {
       return window.SourceCompanionRepositoryStashActions.runStashAction;
     }
@@ -2685,6 +2719,16 @@
       } catch {
         // Try the next runtime-specific path.
       }
+    }
+
+    return null;
+  }
+
+  function resolveDesktopRepositoryBridge() {
+    if (window.SourceCompanionDesktopBridge) return window.SourceCompanionDesktopBridge;
+    if (window.SourceCompanionDesktopBridgeFactory &&
+      typeof window.SourceCompanionDesktopBridgeFactory.resolveDesktopBridge === "function") {
+      return window.SourceCompanionDesktopBridgeFactory.resolveDesktopBridge(window);
     }
 
     return null;

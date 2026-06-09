@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window loads the full Source Companion UI without shell, filesystem, or Git bridge permissions.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

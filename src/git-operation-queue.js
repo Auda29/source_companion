@@ -29,6 +29,7 @@ class GitOperationQueue {
       action,
       kind,
       options: request.options || {},
+      input: request.input,
       priority,
       status: "queued",
       queuedAt: this.now(),
@@ -112,6 +113,7 @@ class GitOperationQueue {
       action: operation.action,
       repositoryPath: operation.repositoryPath,
       options: operation.options,
+      input: operation.input,
       signal: operation.controller.signal
     }).then((result) => {
       const status = operation.controller.signal.aborted || isAbortResult(result) ? "aborted" : result.ok ? "succeeded" : "failed";

@@ -55,6 +55,7 @@ Nicht Teil des Produktziels:
 
 - Produktplan: [docs/plan.md](docs/plan.md)
 - Scope-Gates: [docs/scope-gates.md](docs/scope-gates.md)
+- Desktop-Shell: [docs/desktop-shell.md](docs/desktop-shell.md)
 - Aufgabenliste: [docs/tasks.md](docs/tasks.md)
 - Brainstorming: [docs/brainstorm.md](docs/brainstorm.md)
 
