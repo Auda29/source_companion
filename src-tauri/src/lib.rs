@@ -341,6 +341,14 @@ fn repository_run_commit_action(
 }
 
 #[tauri::command]
+fn repository_run_clone_action(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("runCloneAction", request)
+}
+
+#[tauri::command]
 fn repository_run_branch_action(
     state: tauri::State<'_, DesktopBridgeState>,
     request: Option<Value>,
@@ -354,6 +362,14 @@ fn repository_run_sync_action(
     request: Option<Value>,
 ) -> Result<Value, String> {
     state.invoke("runSyncAction", request)
+}
+
+#[tauri::command]
+fn repository_run_merge_action(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("runMergeAction", request)
 }
 
 #[tauri::command]
@@ -452,6 +468,22 @@ fn github_logout(
     state.invoke("logoutGitHub", request)
 }
 
+#[tauri::command]
+fn github_list_user_repositories(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("listGitHubUserRepositories", request)
+}
+
+#[tauri::command]
+fn github_search_user_repositories(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("searchGitHubUserRepositories", request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let desktop_bridge_state =
@@ -470,8 +502,10 @@ pub fn run() {
             repository_run_file_action,
             repository_run_hunk_action,
             repository_run_commit_action,
+            repository_run_clone_action,
             repository_run_branch_action,
             repository_run_sync_action,
+            repository_run_merge_action,
             repository_run_stash_action,
             repository_get_git_output,
             repository_watch_start,
@@ -483,7 +517,9 @@ pub fn run() {
             github_device_login_poll,
             github_device_login_cancel,
             github_login,
-            github_logout
+            github_logout,
+            github_list_user_repositories,
+            github_search_user_repositories
         ])
         .run(tauri::generate_context!())
         .expect("error while running Source Companion");

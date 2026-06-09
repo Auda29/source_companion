@@ -17,6 +17,7 @@ const ALLOWED_GIT_ACTIONS = Object.freeze([
   "fetch",
   "pull",
   "push",
+  "merge",
   "remote",
   "clone",
   "init",
@@ -38,6 +39,7 @@ const COMMAND_BUILDERS = Object.freeze({
   fetch: buildFetchArgs,
   pull: buildPullArgs,
   push: buildPushArgs,
+  merge: buildMergeArgs,
   remote: buildRemoteArgs,
   clone: buildCloneArgs,
   init: buildInitArgs,
@@ -273,6 +275,11 @@ function buildPushArgs(options) {
     optionalRef(options.remote),
     optionalRef(options.branch)
   ].filter(Boolean);
+}
+
+function buildMergeArgs(options) {
+  assertKnownOptions(options, ["target"]);
+  return ["merge", "--no-edit", requireRef(options.target, "target")];
 }
 
 function buildRemoteArgs(options) {

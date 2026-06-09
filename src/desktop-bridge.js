@@ -10,8 +10,10 @@ const DESKTOP_BRIDGE_COMMANDS = Object.freeze({
   runFileAction: "repository_run_file_action",
   runHunkAction: "repository_run_hunk_action",
   runCommitAction: "repository_run_commit_action",
+  runCloneAction: "repository_run_clone_action",
   runBranchAction: "repository_run_branch_action",
   runSyncAction: "repository_run_sync_action",
+  runMergeAction: "repository_run_merge_action",
   runStashAction: "repository_run_stash_action",
   getGitOutput: "repository_get_git_output",
   startRepositoryWatch: "repository_watch_start",
@@ -23,7 +25,9 @@ const DESKTOP_BRIDGE_COMMANDS = Object.freeze({
   pollGitHubDeviceLogin: "github_device_login_poll",
   cancelGitHubDeviceLogin: "github_device_login_cancel",
   loginGitHub: "github_login",
-  logoutGitHub: "github_logout"
+  logoutGitHub: "github_logout",
+  listGitHubUserRepositories: "github_list_user_repositories",
+  searchGitHubUserRepositories: "github_search_user_repositories"
 });
 
 const DESKTOP_BRIDGE_METHODS = Object.freeze(Object.keys(DESKTOP_BRIDGE_COMMANDS));
@@ -76,8 +80,10 @@ function createDesktopBridgeBackend({
   runFileAction,
   runHunkAction,
   runCommitAction,
+  runCloneAction,
   runBranchAction,
   runSyncAction,
+  runMergeAction,
   runStashAction,
   RepositoryStatusWatcher,
   githubAuthBackend,
@@ -90,8 +96,10 @@ function createDesktopBridgeBackend({
     runFileAction,
     runHunkAction,
     runCommitAction,
+    runCloneAction,
     runBranchAction,
     runSyncAction,
+    runMergeAction,
     runStashAction,
     RepositoryStatusWatcher,
     githubAuthBackend,
@@ -111,8 +119,10 @@ function createDesktopBridgeBackend({
     runFileAction: async (request = {}) => modules.runFileAction(withExecute(request, execute)),
     runHunkAction: async (request = {}) => modules.runHunkAction(withExecute(request, execute)),
     runCommitAction: async (request = {}) => modules.runCommitAction(withExecute(request, execute)),
+    runCloneAction: async (request = {}) => modules.runCloneAction(withExecute(request, execute)),
     runBranchAction: async (request = {}) => modules.runBranchAction(withExecute(request, execute)),
     runSyncAction: async (request = {}) => modules.runSyncAction(withExecute(request, execute)),
+    runMergeAction: async (request = {}) => modules.runMergeAction(withExecute(request, execute)),
     runStashAction: async (request = {}) => modules.runStashAction(withExecute(request, execute)),
     getGitOutput: async (request = {}) => {
       const repositoryId = repositoryIdFor(request.repositoryId, request.repositoryPath);
@@ -204,7 +214,9 @@ function createDesktopBridgeBackend({
     pollGitHubDeviceLogin: async (request = {}) => modules.githubAuthBackend.pollDeviceLogin(normalizeRequest(request)),
     cancelGitHubDeviceLogin: async (request = {}) => modules.githubAuthBackend.cancelDeviceLogin(normalizeRequest(request)),
     loginGitHub: async (request = {}) => modules.githubAuthBackend.login(normalizeRequest(request)),
-    logoutGitHub: async (request = {}) => modules.githubAuthBackend.logout(normalizeRequest(request))
+    logoutGitHub: async (request = {}) => modules.githubAuthBackend.logout(normalizeRequest(request)),
+    listGitHubUserRepositories: async (request = {}) => modules.githubAuthBackend.listUserRepositories(normalizeRequest(request)),
+    searchGitHubUserRepositories: async (request = {}) => modules.githubAuthBackend.searchUserRepositories(normalizeRequest(request))
   });
 }
 
@@ -257,8 +269,10 @@ function loadBackendModules(overrides) {
     runFileAction: overrides.runFileAction || require("./repository-file-actions").runFileAction,
     runHunkAction: overrides.runHunkAction || require("./repository-hunk-actions").runHunkAction,
     runCommitAction: overrides.runCommitAction || require("./repository-commit-actions").runCommitAction,
+    runCloneAction: overrides.runCloneAction || require("./repository-clone-actions").runCloneAction,
     runBranchAction: overrides.runBranchAction || require("./repository-branch-actions").runBranchAction,
     runSyncAction: overrides.runSyncAction || require("./repository-sync-actions").runSyncAction,
+    runMergeAction: overrides.runMergeAction || require("./repository-merge-actions").runMergeAction,
     runStashAction: overrides.runStashAction || require("./repository-stash-actions").runStashAction,
     RepositoryStatusWatcher: overrides.RepositoryStatusWatcher || RepositoryStatusWatcher,
     githubAuthBackend: overrides.githubAuthBackend || createDesktopGitHubAuthBridgeBackend(overrides.githubAuthOptions)

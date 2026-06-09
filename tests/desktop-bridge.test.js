@@ -26,8 +26,10 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
     "runFileAction",
     "runHunkAction",
     "runCommitAction",
+    "runCloneAction",
     "runBranchAction",
     "runSyncAction",
+    "runMergeAction",
     "runStashAction",
     "getGitOutput",
     "startRepositoryWatch",
@@ -39,7 +41,9 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
     "pollGitHubDeviceLogin",
     "cancelGitHubDeviceLogin",
     "loginGitHub",
-    "logoutGitHub"
+    "logoutGitHub",
+    "listGitHubUserRepositories",
+    "searchGitHubUserRepositories"
   ]);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runGitCommand"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runShellCommand"), false);
@@ -89,6 +93,127 @@ test("tauri native app registers every repository bridge command", () => {
   assert.match(lib, /desktop-bridge-worker\.js/);
   assert.match(lib, /--preserve-symlinks/);
   assert.match(lib, /--preserve-symlinks-main/);
+});
+
+test("desktop bridge backend lists GitHub repositories without exposing tokens", async () => {
+  const calls = [];
+  const bridge = createDesktopBridgeBackend({
+    queue: createRecordingQueue(),
+    githubAuthBackend: require("../src/github-api-client").createGitHubAuthBridgeBackend({
+      githubClient: {
+        listUserRepositories: async (options) => {
+          calls.push(["list", options]);
+          return {
+            ok: true,
+            repositories: [{
+              id: 1,
+              owner: "octo",
+              name: "source-companion",
+              fullName: "octo/source-companion",
+              description: "Focused source control",
+              private: false,
+              visibility: "public",
+              stars: 4,
+              cloneUrl: "https://github.com/octo/source-companion.git",
+              token: "must-not-leak"
+            }],
+            token: "must-not-leak"
+          };
+        },
+        searchUserRepositories: async (options) => {
+          calls.push(["search", options]);
+          return {
+            ok: true,
+            repositories: [{
+              id: 2,
+              owner: "octo",
+              name: "desktop",
+              fullName: "octo/desktop",
+              description: "Desktop bridge",
+              private: true,
+              visibility: "private",
+              stars: 7,
+              cloneUrl: "https://github.com/octo/desktop.git",
+              token: "must-not-leak"
+            }],
+            token: "must-not-leak"
+          };
+        }
+      }
+    })
+  });
+
+  const listed = await bridge.listGitHubUserRepositories({ maxPages: 1 });
+  const searched = await bridge.searchGitHubUserRepositories({ query: "desktop" });
+
+  assert.deepEqual(calls, [
+    ["list", { maxPages: 1 }],
+    ["search", { query: "desktop" }]
+  ]);
+  assert.equal(listed.ok, true);
+  assert.equal(listed.token, undefined);
+  assert.equal(listed.repositories[0].token, undefined);
+  assert.equal(listed.repositories[0].cloneUrl, "https://github.com/octo/source-companion.git");
+  assert.equal(searched.ok, true);
+  assert.equal(searched.repositories[0].fullName, "octo/desktop");
+  assert.equal(searched.repositories[0].private, true);
+  assert.equal(searched.repositories[0].token, undefined);
+});
+
+test("desktop bridge backend delegates clone through the operation queue", async () => {
+  const queue = createRecordingQueue();
+  const bridge = createDesktopBridgeBackend({ queue });
+
+  const result = await bridge.runCloneAction({
+    url: "https://github.com/octo/source-companion.git",
+    targetPath: "C:\\code\\source-companion"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.command.action, "clone");
+  assert.equal(queue.requests.length, 1);
+  assert.deepEqual(queue.requests[0], {
+    repositoryId: "repo:c:\\code\\source-companion",
+    repositoryPath: "C:\\code\\source-companion",
+    action: "clone",
+    kind: "clone",
+    options: {
+      url: "https://github.com/octo/source-companion.git",
+      targetPath: "C:\\code\\source-companion"
+    },
+    priority: undefined,
+    input: undefined
+  });
+});
+
+test("desktop bridge backend delegates merge through the operation queue", async () => {
+  const queue = createRecordingQueue();
+  const bridge = createDesktopBridgeBackend({ queue });
+
+  const result = await bridge.runMergeAction({
+    repositoryPath: "C:\\repo",
+    git: {
+      branch: { name: "main", detached: false },
+      staged: [],
+      unstaged: [],
+      untracked: [],
+      conflicted: []
+    },
+    target: "feature"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.command.action, "merge");
+  assert.equal(queue.requests.length, 1);
+  assert.deepEqual(queue.requests[0], {
+    repositoryId: "repo:c:\\repo",
+    repositoryPath: "C:\\repo",
+    action: "merge",
+    kind: "merge",
+    options: { target: "feature" },
+    priority: undefined,
+    input: undefined
+  });
 });
 
 test("desktop bridge backend owns repository watchers behind start get and stop commands", async () => {

@@ -16,6 +16,7 @@
     repositoryCommitActionRunner: resolveRepositoryCommitActionRunner(),
     repositoryBranchActionRunner: resolveRepositoryBranchActionRunner(),
     repositorySyncActionRunner: resolveRepositorySyncActionRunner(),
+    repositoryMergeActionRunner: resolveRepositoryMergeActionRunner(),
     repositoryStashActionRunner: resolveRepositoryStashActionRunner(),
     repositoryCloneActionRunner: resolveRepositoryCloneActionRunner(),
     repositoryPublishPreflightRunner: resolveRepositoryPublishPreflightRunner(),
@@ -675,6 +676,13 @@
       });
     });
 
+    workspaceContent.querySelectorAll("[data-merge-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        runRepositoryMergeAction(active.id, new FormData(form));
+      });
+    });
+
     workspaceContent.querySelectorAll("[data-stash-form]").forEach((form) => {
       form.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -757,6 +765,7 @@
       commitAction: null,
       branchAction: null,
       syncAction: null,
+      mergeAction: null,
       stashAction: null,
       cloneAction: null,
       cloneRequest: null,
@@ -1756,6 +1765,18 @@
       localName: clean(formData.get("localName"))
     };
 
+    if (tab.mergeAction && tab.mergeAction.status === "running") {
+      tab.branchAction = {
+        status: "failed",
+        action,
+        branch: branchActionTarget(action, values),
+        message: "Merge action is running.",
+        completedAt: new Date().toISOString()
+      };
+      render();
+      return;
+    }
+
     if (action === "delete" && values.name && !confirmBranchDelete(values.name)) {
       return;
     }
@@ -1815,6 +1836,78 @@
         error: {
           kind: "branch-action-error",
           message: error && error.message ? error.message : "Branch action failed."
+        }
+      });
+    }
+  }
+
+  async function runRepositoryMergeAction(tabId, formData) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const target = clean(formData.get("target"));
+    const validation = validateMergeAction(tab, { target });
+    if (!validation.ok) {
+      tab.mergeAction = {
+        status: "failed",
+        action: "merge",
+        branch: target || null,
+        message: validation.message,
+        completedAt: new Date().toISOString()
+      };
+      render();
+      return;
+    }
+
+    tab.mergeAction = {
+      status: "running",
+      action: "merge",
+      branch: target,
+      message: mergeActionRunningLabel(target),
+      completedAt: null
+    };
+    render();
+
+    const runMergeAction = state.repositoryMergeActionRunner;
+    if (!runMergeAction) {
+      applyMergeActionResult(tabId, {
+        ok: false,
+        action: "merge",
+        branch: target,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository merge actions are not available in this runtime.",
+        error: {
+          kind: "repository-merge-actions-unavailable",
+          message: "Repository merge actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runMergeAction({
+        repositoryPath: tab.path,
+        git: tab.git,
+        target
+      });
+      applyMergeActionResult(tabId, result);
+      refreshRepositoryState(tabId, "merge");
+    } catch (error) {
+      applyMergeActionResult(tabId, {
+        ok: false,
+        action: "merge",
+        branch: target,
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Merge action failed.",
+        error: {
+          kind: "merge-action-error",
+          message: error && error.message ? error.message : "Merge action failed."
         }
       });
     }
@@ -2142,6 +2235,23 @@
     }
     tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
     setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Sync action completed." : "Sync action failed."));
+    render();
+  }
+
+  function applyMergeActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    tab.mergeAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: result.action || "merge",
+      branch: result.branch || null,
+      message: result.message,
+      error: result.error || null,
+      completedAt: new Date().toISOString()
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Merge completed." : "Merge failed."));
     render();
   }
 
@@ -2766,6 +2876,34 @@
     return null;
   }
 
+  function resolveRepositoryMergeActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runMergeAction === "function") {
+      return desktopBridge.runMergeAction;
+    }
+
+    if (window.SourceCompanionRepositoryMergeActions && typeof window.SourceCompanionRepositoryMergeActions.runMergeAction === "function") {
+      return window.SourceCompanionRepositoryMergeActions.runMergeAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-merge-actions", "./src/repository-merge-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runMergeAction === "function") {
+          return loaded.runMergeAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
   function resolveRepositoryStashActionRunner() {
     if (desktopBridge && typeof desktopBridge.runStashAction === "function") {
       return desktopBridge.runStashAction;
@@ -2795,6 +2933,10 @@
   }
 
   function resolveRepositoryCloneActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runCloneAction === "function") {
+      return desktopBridge.runCloneAction;
+    }
+
     if (window.SourceCompanionRepositoryCloneActions && typeof window.SourceCompanionRepositoryCloneActions.runCloneAction === "function") {
       return window.SourceCompanionRepositoryCloneActions.runCloneAction;
     }
@@ -2915,7 +3057,7 @@
 
     const desktopBridge = resolveDesktopRepositoryBridge();
     if (desktopBridge && typeof desktopBridge.getGitHubAuthStatus === "function") {
-      return {
+      const bridge = {
         getAuthStatus: () => desktopBridge.getGitHubAuthStatus(),
         startDeviceLogin: (options) => desktopBridge.startGitHubDeviceLogin(options || {}),
         getLoginStatus: (options) => desktopBridge.getGitHubDeviceLoginStatus(options || {}),
@@ -2924,6 +3066,13 @@
         login: (options) => desktopBridge.loginGitHub(options || {}),
         logout: (options) => desktopBridge.logoutGitHub(options || {})
       };
+      if (typeof desktopBridge.listGitHubUserRepositories === "function") {
+        bridge.listUserRepositories = (options) => desktopBridge.listGitHubUserRepositories(options || {});
+      }
+      if (typeof desktopBridge.searchGitHubUserRepositories === "function") {
+        bridge.searchUserRepositories = (options) => desktopBridge.searchGitHubUserRepositories(options || {});
+      }
+      return bridge;
     }
 
     const tauriInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
@@ -3080,6 +3229,7 @@
         ${renderPublishPanel(repo)}
         ${renderBranchPanel(repo)}
         ${renderPullRequestPanel(repo)}
+        ${renderMergePanel(repo)}
         ${renderSyncPanel(repo)}
         ${renderStashPanel(repo)}
         ${renderHistoryPanel(repo)}
@@ -3241,6 +3391,37 @@
     `;
   }
 
+  function renderMergePanel(repo) {
+    const running = repo.mergeAction && repo.mergeAction.status === "running";
+    const target = repo.mergeAction && repo.mergeAction.branch ? repo.mergeAction.branch : defaultMergeTarget(repo);
+    const validation = validateMergeAction(repo, { target });
+    const readiness = validateMergeReadiness(repo);
+    const status = repo.mergeAction ? repo.mergeAction : {
+      status: validation.ok ? "idle" : "blocked",
+      message: validation.message
+    };
+
+    return `
+      <section class="sync-panel" aria-label="Merge action">
+        <div class="sync-panel-heading">
+          <div>
+            <h3>Merge</h3>
+            <p>${escapeHtml(branchLabel(repo.git.branch))} receives selected branch</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <form class="branch-form" data-merge-form>
+          <label>
+            Merge branch
+            <input name="target" autocomplete="off" placeholder="feature/name" value="${escapeHtml(target)}" ${running ? "disabled" : ""}>
+          </label>
+          <button class="button" type="submit" ${readiness.ok && !running ? "" : "disabled"} title="${escapeHtml(validation.message)}">Merge</button>
+        </form>
+        <div class="sync-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
   function renderStashPanel(repo) {
     const stashes = Array.isArray(repo.git.stashes) ? repo.git.stashes : [];
     const running = repo.stashAction && repo.stashAction.status === "running";
@@ -3303,7 +3484,8 @@
   function renderBranchPanel(repo) {
     const disabled = !isBranchActionAvailable(repo);
     const running = repo.branchAction && repo.branchAction.status === "running";
-    const blocked = disabled || running;
+    const mergeRunning = repo.mergeAction && repo.mergeAction.status === "running";
+    const blocked = disabled || running || mergeRunning;
     const status = repo.branchAction ? repo.branchAction : {
       status: disabled ? "blocked" : "idle",
       message: disabled ? "Open a Git repository before running branch actions." : "Branch actions are ready."
@@ -3593,7 +3775,9 @@
 
   function renderCommitBox(repo) {
     const validation = validateCommitAction(repo, "commit");
-    const running = repo.commitAction && repo.commitAction.status === "running" || repo.syncAction && repo.syncAction.status === "running";
+    const running = repo.commitAction && repo.commitAction.status === "running" ||
+      repo.syncAction && repo.syncAction.status === "running" ||
+      repo.mergeAction && repo.mergeAction.status === "running";
     const stagedCount = countFiles(repo.git.staged);
     const status = repo.commitAction ? repo.commitAction : {
       status: validation.ok ? "idle" : "blocked",
@@ -3886,6 +4070,9 @@
     if (repo.syncAction && repo.syncAction.status === "running") {
       return { ok: false, message: "Sync action is running." };
     }
+    if (repo.mergeAction && repo.mergeAction.status === "running") {
+      return { ok: false, message: "Merge action is running." };
+    }
     if (!clean(repo.commitMessage)) {
       return { ok: false, message: "Enter a commit message before committing." };
     }
@@ -3999,6 +4186,10 @@
     return "Running branch action.";
   }
 
+  function mergeActionRunningLabel(target) {
+    return `Merging ${target || "selected branch"}.`;
+  }
+
   function syncActionLabel(action) {
     if (action === "fetch") return "Fetch";
     if (action === "pull") return "Pull";
@@ -4039,6 +4230,9 @@
     }
     if (repo.commitAction && repo.commitAction.status === "running") {
       return { ok: false, message: "Commit is running." };
+    }
+    if (repo.mergeAction && repo.mergeAction.status === "running") {
+      return { ok: false, message: "Merge action is running." };
     }
 
     const remote = primaryRemoteName(repo.git);
@@ -4081,6 +4275,57 @@
     return { ok: false, message: "Unknown sync action." };
   }
 
+  function validateMergeAction(repo, values = {}) {
+    const readiness = validateMergeReadiness(repo);
+    if (!readiness.ok) return readiness;
+
+    const branch = currentBranchName(repo.git);
+    const target = clean(values.target);
+    if (!target) {
+      return { ok: false, message: "Choose a branch to merge into the current branch." };
+    }
+    if (target === branch) {
+      return { ok: false, message: "Choose a different branch to merge." };
+    }
+
+    return { ok: true, message: `Ready to merge ${target} into ${branch}.` };
+  }
+
+  function validateMergeReadiness(repo) {
+    if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
+      return { ok: false, message: "Open a Git repository before merging." };
+    }
+    if (repo.mergeAction && repo.mergeAction.status === "running") {
+      return { ok: false, message: "Merge action is running." };
+    }
+    if (repo.branchAction && repo.branchAction.status === "running") {
+      return { ok: false, message: "Branch action is running." };
+    }
+    if (repo.syncAction && repo.syncAction.status === "running") {
+      return { ok: false, message: "Sync action is running." };
+    }
+    if (repo.commitAction && repo.commitAction.status === "running") {
+      return { ok: false, message: "Commit is running." };
+    }
+    if (repo.stashAction && repo.stashAction.status === "running") {
+      return { ok: false, message: "Stash action is running." };
+    }
+    if (repo.health === "conflict" || countFiles(repo.git.conflicted) > 0) {
+      return { ok: false, message: "Resolve existing conflicts before starting another merge." };
+    }
+
+    const branch = currentBranchName(repo.git);
+    if (!branch) {
+      return { ok: false, message: "Check out a local branch before merging." };
+    }
+
+    if (countFiles(repo.git.staged) + countFiles(repo.git.unstaged) + countFiles(repo.git.untracked) > 0) {
+      return { ok: false, message: "Commit, stash, or discard local changes before merging." };
+    }
+
+    return { ok: true, message: "Ready to choose a branch to merge." };
+  }
+
   function validateStashAction(repo, action, values = {}) {
     if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
       return { ok: false, message: "Open a Git repository before using stashes." };
@@ -4096,6 +4341,9 @@
     }
     if (repo.syncAction && repo.syncAction.status === "running") {
       return { ok: false, message: "Sync action is running." };
+    }
+    if (repo.mergeAction && repo.mergeAction.status === "running") {
+      return { ok: false, message: "Merge action is running." };
     }
 
     if (action === "list") {
@@ -4173,6 +4421,13 @@
   function branchActionTarget(action, values) {
     if (action === "checkout-remote") return clean(values.localName) || clean(values.remoteBranch) || null;
     return clean(values.name) || null;
+  }
+
+  function defaultMergeTarget(repo) {
+    const upstream = upstreamParts(repo && repo.git);
+    const current = currentBranchName(repo && repo.git);
+    if (upstream && upstream.branch && upstream.branch !== current) return upstream.branch;
+    return "";
   }
 
   function isBranchActionAvailable(repo) {

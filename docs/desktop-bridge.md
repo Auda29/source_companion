@@ -4,7 +4,7 @@ Die Desktop-Bridge ist die einzige Renderer-Fassade fuer lokale Repository-Aktio
 
 ## Renderer-Fassade
 
-`src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Branch-, Sync- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist. Tauri-Aufrufe uebergeben Renderer-Anfragen gekapselt als `{ request: ... }`, damit native Handler keine freie Argument- oder Shell-Flaeche erhalten. Native Ordnerdialoge bleiben auf die erlaubten Open-/Clone-/Publish-Flows begrenzt; Watcher-Befehle starten, lesen und stoppen nur Repository-Status-Watcher fuer konkrete Repository-Kontexte.
+`src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Clone-, Branch-, Sync-, Merge- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist. Tauri-Aufrufe uebergeben Renderer-Anfragen gekapselt als `{ request: ... }`, damit native Handler keine freie Argument- oder Shell-Flaeche erhalten. Native Ordnerdialoge bleiben auf die erlaubten Open-/Clone-/Publish-Flows begrenzt; Watcher-Befehle starten, lesen und stoppen nur Repository-Status-Watcher fuer konkrete Repository-Kontexte.
 
 Erlaubte Methoden:
 
@@ -17,8 +17,10 @@ Erlaubte Methoden:
 - `runFileAction`
 - `runHunkAction`
 - `runCommitAction`
+- `runCloneAction`
 - `runBranchAction`
 - `runSyncAction`
+- `runMergeAction`
 - `runStashAction`
 - `getGitOutput`
 - `startRepositoryWatch`
@@ -36,8 +38,10 @@ Zugehoerige Tauri-Command-Namen:
 - `repository_run_file_action`
 - `repository_run_hunk_action`
 - `repository_run_commit_action`
+- `repository_run_clone_action`
 - `repository_run_branch_action`
 - `repository_run_sync_action`
+- `repository_run_merge_action`
 - `repository_run_stash_action`
 - `repository_get_git_output`
 - `repository_watch_start`
@@ -67,6 +71,8 @@ Die Desktop-Bridge stellt GitHub Auth als explizite, tokenfreie Methoden bereit:
 - `cancelGitHubDeviceLogin`
 - `loginGitHub`
 - `logoutGitHub`
+- `listGitHubUserRepositories`
+- `searchGitHubUserRepositories`
 
 Zugehoerige Tauri-Command-Namen:
 
@@ -77,8 +83,10 @@ Zugehoerige Tauri-Command-Namen:
 - `github_device_login_cancel`
 - `github_login`
 - `github_logout`
+- `github_list_user_repositories`
+- `github_search_user_repositories`
 
-Diese Commands laufen ebenfalls ueber den persistenten Bridge-Worker. Der Default-Pfad von `createDesktopBridgeBackend()` erstellt dafuer ein `GitHubAuthBridgeBackend` mit backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`; Tests duerfen diese Bausteine injizieren, der Renderer bekommt aber nie direkten Zugriff darauf. Der Device Flow spricht die GitHub-OAuth-Endpunkte im Worker an, oeffnet optional nur die Verification URL im Systembrowser und pollt Access Tokens backend-intern. Fuer echte Desktop-Logins muss ein OAuth Client ueber `SOURCE_COMPANION_GITHUB_CLIENT_ID` oder `GITHUB_OAUTH_CLIENT_ID` konfiguriert sein.
+Diese Commands laufen ebenfalls ueber den persistenten Bridge-Worker. Der Default-Pfad von `createDesktopBridgeBackend()` erstellt dafuer ein `GitHubAuthBridgeBackend` mit backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`; Tests duerfen diese Bausteine injizieren, der Renderer bekommt aber nie direkten Zugriff darauf. Der Device Flow spricht die GitHub-OAuth-Endpunkte im Worker an, oeffnet optional nur die Verification URL im Systembrowser und pollt Access Tokens backend-intern. Repository-Liste und Repository-Suche laufen ueber denselben backend-internen GitHub-Client, liefern nur normalisierte Metadaten wie Owner/Name, Beschreibung, Sichtbarkeit, Stars und Clone-URLs und geben keine Token-Werte an den Renderer zurueck. Fuer echte Desktop-Logins muss ein OAuth Client ueber `SOURCE_COMPANION_GITHUB_CLIENT_ID` oder `GITHUB_OAUTH_CLIENT_ID` konfiguriert sein.
 
 `DesktopSecureTokenStore` speichert das Access Token im Betriebssystem-Credential-Store und haelt nur nicht-sensitive Metadaten wie Login, Scopes, Token-Quelle und letzte Validierung in einer lokalen JSON-Metadatendatei. Windows nutzt Windows Credential Manager, macOS Keychain und Linux Secret Service/libsecret ueber die jeweilige Plattform-Schnittstelle. Renderer-Antworten enthalten nur Auth-Status, User Code, Verification URL, Ablaufzeit, Polling-Intervall und strukturierte Fehler. Device Code und Access Token werden nicht normalisiert und nicht an den Renderer zurueckgegeben.
 

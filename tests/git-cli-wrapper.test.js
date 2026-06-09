@@ -27,6 +27,7 @@ test("whitelists the planned baseline Git actions", () => {
     "fetch",
     "pull",
     "push",
+    "merge",
     "remote",
     "clone",
     "init",
@@ -95,6 +96,11 @@ test("builds Git arguments from structured options", () => {
     "--pretty=format:",
     "--patch",
     "HEAD"
+  ]);
+  assert.deepEqual(buildGitArgs("merge", { target: "feature/work" }), [
+    "merge",
+    "--no-edit",
+    "feature/work"
   ]);
 });
 

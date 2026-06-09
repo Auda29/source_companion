@@ -1140,6 +1140,14 @@ class GitHubAuthBridgeBackend {
     this.activeLogin = null;
     return normalizeTokenFreeAuthStatus(await this.client.logout(options));
   }
+
+  async listUserRepositories(options = {}) {
+    return normalizeRepositoryResult(await this.client.listUserRepositories(options));
+  }
+
+  async searchUserRepositories(options = {}) {
+    return normalizeRepositoryResult(await this.client.searchUserRepositories(options));
+  }
 }
 
 function createGitHubApiClient(options) {

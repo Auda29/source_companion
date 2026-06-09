@@ -412,11 +412,12 @@ Stand 2026-06-09: Die zu breite Desktop-GitHub-/Paritaetsaufgabe `T51` wurde dur
 
 ### T32 - Merge-Basisfunktion umsetzen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P3`
 - Abhaengigkeiten: `T6`, `T8`, `T15`, `T16`, `T23`, `T31`
 - Definition of Done: Falls `T31` Merge fuer den ersten Produktumfang freigibt, kann der aktuelle Branch mit einem ausgewaehlten Branch gemerged werden; Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output sind sichtbar; bei uncommitted changes oder Git-Konflikten wird kein Terminal vorausgesetzt; falls `T31` Merge verschiebt, wird dieser Task entsprechend als nicht mehr im ersten Umfang markiert.
 - Implementierungsnotiz: Rebase nur in einem separaten spaeteren Task planen, wenn `T31` es ausdruecklich freigibt und Fehler-, Warn- und Abbruchfaelle sauber bedienbar sind.
+- Notiz: 2026-06-09 21:22 CEST umgesetzt und Review-Punkt adressiert: `git merge --no-edit <branch>` ist im Git CLI Wrapper whitelisted, `src/repository-merge-actions.js` kapselt Merge-Vorbedingungen, Erfolg, Git-Fehler und Konfliktmeldungen, und `src/main.js` zeigt einen Merge-Bereich mit sichtbarem Ziel-Branch, Busy-/Erfolgs-/Fehlerstatus, Git Output und Status-Refresh. Desktop-Bridge und Tauri-Handler bieten `runMergeAction` als expliziten Command; die line-ending-stabile Merge-Regression sowie die volle Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -466,22 +467,23 @@ Stand 2026-06-09: Die zu breite Desktop-GitHub-/Paritaetsaufgabe `T51` wurde dur
 
 ### T52 - Desktop GitHub Auth-Bridge und Secure Token Store bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T38`, `T49`
 - Definition of Done: Die Tauri-/Backend-Bridge bietet explizit whitelisted GitHub-Auth-Commands fuer Device Login starten, Login-Status/Polling, Login abbrechen, Logout und Auth-Status laden; Tokens werden ueber den in `docs/github-auth-decision.md` beschriebenen SecureTokenStore gelesen, geschrieben und geloescht; Token-Werte erscheinen nie im Renderer, in `localStorage`, Repository-Kontexten, Remote-URLs oder Git-Argumenten; fehlende Auth, fehlende Scopes, widerrufene Tokens, Rate-Limits, Netzwerkfehler, Login-Ablauf und nicht verfuegbarer Secure Storage folgen dem dokumentierten Fehlervertrag.
 - Implementierungsnotiz: GitHub OAuth Device Flow und OS-Credential-Store zuerst sauber kapseln. Der Renderer darf nur Status, User Code, Verification URL, Ablaufzeit und lesbare Fehler sehen; kein eigenes SSH-Key-Management und keine GitHub-Dashboard-Funktionen aufnehmen.
 - Notiz: 2026-06-09 18:55 CEST Review-Punkte adressiert: `createDesktopBridgeBackend()` erstellt im Default-Pfad jetzt ein `GitHubAuthBridgeBackend` mit backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`; der Device Flow nutzt die GitHub-OAuth-Endpunkte im Worker, optionalen Systembrowser-Start und tokenfreies Renderer-Polling. `DesktopSecureTokenStore` liest/schreibt/loescht Tokens ueber einen OS-Credential-Store-Adapter mit separater nicht-sensitiver Metadatei; Windows Credential Manager, macOS Keychain und Linux Secret Service/libsecret sind als Plattformpfade gekapselt. `docs/desktop-bridge.md` dokumentiert Default-Pfad und OAuth-Client-ID-Konfiguration. Fokussierte GitHub-/Desktop-Bridge-Tests bestanden mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. Die Tauri-/Backend-Bridge stellt die explizit whitelisted GitHub-Auth-Commands fuer Auth-Status, Device-Login Start/Status/Polling/Cancel, Login und Logout bereit; `createDesktopBridgeBackend()` verdrahtet im Default-Pfad `GitHubAuthBridgeBackend`, backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`. Renderer-Antworten normalisieren Auth- und Device-Login-Status tokenfrei, `DesktopSecureTokenStore` trennt OS-Credential-Store-Token von nicht-sensitiver Metadatei, und fehlende Auth/Scopes, widerrufene Tokens, Rate-Limits, Netzwerkfehler, Login-Ablauf und nicht verfuegbarer Secure Storage folgen dem dokumentierten Fehlervertrag. Fokussierte Auth-/Bridge-/Renderer-Tests bestanden mit Preserve-Symlink-Flags; die volle Node-Suite wird nur durch die uncommitted `T32`-Merge-Regression blockiert. Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T53 - Desktop GitHub-Repository-Liste und Clone-Flow verdrahten
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T40`, `T50`, `T52`
 - Definition of Done: Clone from GitHub nutzt in der Desktop-Full-UI ausschliesslich die Tauri-/Backend-Bridge fuer Auth-Status, User-Repositories, Repository-Suche und Clone-Start; Owner/Name, Beschreibung, Sichtbarkeit, Stars, Clone-URL und private/public Indikator bleiben vor Ausfuehrung sichtbar; Zielordner kommt aus dem nativen Dialog-Flow; Clone-Fortschritt, Erfolg, SSH-/HTTPS-/Auth-/API-/Netzwerkfehler und erfolgreiches Oeffnen als Repository-Tab sind im Repository-Kontext und Git Output sichtbar.
 - Implementierungsnotiz: URL-Clone bleibt ohne GitHub Login moeglich. GitHub-Clone liefert nur Repository-Metadaten und Clone-URL an den bestehenden Clone-Runner; Tokens nicht in Git-URLs oder Git-Argumente schreiben.
+- Notiz: 2026-06-09 17:43 CEST umgesetzt: Die Desktop-Bridge bietet jetzt whitelisted GitHub-Repository-Commands fuer User-Repository-Liste und Repository-Suche sowie einen whitelisted Clone-Runner-Command; Tauri registriert `github_list_user_repositories`, `github_search_user_repositories` und `repository_run_clone_action`. Der persistente Worker delegiert GitHub-Metadaten an den backend-internen GitHub-Client, normalisiert sie tokenfrei und fuehrt Clone-Starts ueber den bestehenden Clone-Runner mit `GitOperationQueue`/Git CLI Wrapper aus. `src/main.js` routet den GitHub-Clone-Dialog im Desktop ueber diese Bridge-Methoden und nutzt weiter den nativen Zielordner-Flow.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -543,5 +545,15 @@ Stand 2026-06-09: Die zu breite Desktop-GitHub-/Paritaetsaufgabe `T51` wurde dur
 - Abhaengigkeiten: `T56`, `T45`
 - Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
 - Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T57 - Dokumentation aktualisieren und auf Englisch konsolidieren
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T24`, `T33`, `T48`, `T49`, `T56`, `T45`, `T36`
+- Definition of Done: `README.md` und zentrale Dokumentation sind auf den aktuellen Produkt- und Implementierungsstand gebracht und konsistent auf Englisch formuliert; beschrieben sind Web-Prototyp, Tauri-Desktop-Ziel, Full UI, Floating Window, Git/GitHub-Funktionsumfang, Scope-Grenzen, Setup/Start, Teststrategie und bekannte Einschraenkungen.
+- Implementierungsnotiz: Vor allem `README.md`, `docs/architecture.md`, `docs/plan.md`, Desktop-Dokumente und relevante Checklisten pruefen. Deutsche Planungsnotizen duerfen als historische Arbeitsnotizen bestehen bleiben, aber nutzernahe Dokumentation soll Englisch sein. Keine Produktfeatures bei der Dokumentationsarbeit neu erfinden.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
