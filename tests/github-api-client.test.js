@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const {
   MemorySecureTokenStore,
+  createGitHubBridgeClient,
   createGitHubApiClient
 } = require("../src/github-api-client");
 
@@ -18,6 +19,62 @@ test("reports no-token auth status without reading tokens into UI state", async 
   assert.equal(status.user, null);
   assert.deepEqual(status.scopes, []);
   assert.equal(status.tokenSource, null);
+});
+
+test("direct API client requires an injected secure token store", async () => {
+  const client = createGitHubApiClient();
+
+  const status = await client.getAuthStatus();
+  assert.equal(status.authenticated, false);
+  assert.equal(status.error.kind, "secure-storage-unavailable");
+});
+
+test("renderer bridge client returns token-free auth and repository results", async () => {
+  const calls = [];
+  const client = createGitHubBridgeClient({
+    getAuthStatus: async () => ({
+      authenticated: true,
+      user: "octo",
+      login: "octo",
+      scopes: ["repo", "read:user"],
+      tokenSource: "device-flow",
+      token: "must-not-leak"
+    }),
+    searchUserRepositories: async (options) => {
+      calls.push(options);
+      return {
+        ok: true,
+        repositories: [
+          {
+            id: 1,
+            owner: "octo",
+            name: "source-companion",
+            fullName: "octo/source-companion",
+            cloneUrl: "https://github.com/octo/source-companion.git",
+            stars: 4,
+            private: false,
+            token: "must-not-leak"
+          }
+        ],
+        token: "must-not-leak"
+      };
+    }
+  });
+
+  const status = await client.getAuthStatus();
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user, "octo");
+  assert.equal(status.token, undefined);
+
+  const result = await client.searchUserRepositories({ query: "source" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [{ query: "source" }]);
+  assert.equal(result.token, undefined);
+  assert.equal(result.repositories[0].token, undefined);
+  assert.equal(result.repositories[0].owner, "octo");
+  assert.equal(result.repositories[0].fullName, "octo/source-companion");
+  assert.equal(result.repositories[0].cloneUrl, "https://github.com/octo/source-companion.git");
+  assert.equal(result.repositories[0].stars, 4);
 });
 
 test("stores device login token in secure store and returns token-free status", async () => {

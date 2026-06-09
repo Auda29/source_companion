@@ -27,6 +27,72 @@ class MemorySecureTokenStore {
   }
 }
 
+class UnavailableSecureTokenStore {
+  async read() {
+    throw createGitHubError({
+      kind: "secure-storage-unavailable",
+      message: "Secure token storage is not available in this runtime."
+    });
+  }
+
+  async write() {
+    throw createGitHubError({
+      kind: "secure-storage-unavailable",
+      message: "Secure token storage is not available in this runtime."
+    });
+  }
+
+  async delete() {
+    throw createGitHubError({
+      kind: "secure-storage-unavailable",
+      message: "Secure token storage is not available in this runtime."
+    });
+  }
+}
+
+class GitHubBridgeClient {
+  constructor(bridge) {
+    this.bridge = bridge || null;
+  }
+
+  async getAuthStatus() {
+    return normalizeTokenFreeAuthStatus(await this.callBridge("getAuthStatus"));
+  }
+
+  async login() {
+    return normalizeTokenFreeAuthStatus(await this.callBridge("login"));
+  }
+
+  async logout(options = {}) {
+    return normalizeTokenFreeAuthStatus(await this.callBridge("logout", options));
+  }
+
+  async listUserRepositories(options = {}) {
+    const result = await this.callBridge("listUserRepositories", options);
+    return normalizeRepositoryResult(result);
+  }
+
+  async searchUserRepositories(options = {}) {
+    const result = await this.callBridge("searchUserRepositories", options);
+    return normalizeRepositoryResult(result);
+  }
+
+  async callBridge(method, payload) {
+    if (!this.bridge || typeof this.bridge[method] !== "function") {
+      throw createGitHubError({
+        kind: "github-api-unavailable",
+        message: "GitHub backend bridge is not available in this runtime."
+      });
+    }
+
+    try {
+      return await this.bridge[method](payload);
+    } catch (error) {
+      throw normalizeGitHubError(error);
+    }
+  }
+}
+
 class GitHubApiClient {
   constructor({
     tokenStore,
@@ -36,7 +102,7 @@ class GitHubApiClient {
     requiredScopes = REQUIRED_SCOPES,
     now = () => new Date().toISOString()
   } = {}) {
-    this.tokenStore = tokenStore || new MemorySecureTokenStore();
+    this.tokenStore = tokenStore || new UnavailableSecureTokenStore();
     this.deviceFlow = deviceFlow || null;
     this.fetch = fetchImpl;
     this.apiBaseUrl = String(apiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
@@ -298,22 +364,54 @@ function createGitHubApiClient(options) {
   return new GitHubApiClient(options);
 }
 
+function createGitHubBridgeClient(bridge) {
+  return new GitHubBridgeClient(bridge);
+}
+
+function normalizeTokenFreeAuthStatus(auth) {
+  const source = auth || {};
+  return {
+    authenticated: Boolean(source.authenticated),
+    user: clean(source.user || source.login) || null,
+    login: clean(source.login || source.user) || null,
+    scopes: normalizeScopes(source.scopes),
+    tokenSource: clean(source.tokenSource) || null,
+    lastValidatedAt: source.lastValidatedAt || null,
+    error: source.error ? normalizeGitHubError(source.error) : null
+  };
+}
+
+function normalizeRepositoryResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  return {
+    ok,
+    repositories: Array.isArray(source.repositories) ? source.repositories.map(normalizeRepository) : [],
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub repositories could not be loaded."
+    }))
+  };
+}
+
 function normalizeRepository(repo) {
-  const owner = repo && repo.owner ? clean(repo.owner.login) : "";
+  const owner = repo && repo.owner && typeof repo.owner === "object" ? clean(repo.owner.login) : clean(repo && repo.owner);
   const name = clean(repo && repo.name);
+  const stars = Number.isInteger(repo && repo.stargazers_count) ? repo.stargazers_count :
+    (Number.isInteger(repo && repo.stars) ? repo.stars : 0);
   return {
     id: repo && repo.id ? repo.id : null,
     owner,
     name,
-    fullName: clean(repo && repo.full_name) || (owner && name ? `${owner}/${name}` : name),
+    fullName: clean(repo && (repo.full_name || repo.fullName)) || (owner && name ? `${owner}/${name}` : name),
     description: clean(repo && repo.description),
     private: Boolean(repo && repo.private),
     visibility: clean(repo && repo.visibility) || (repo && repo.private ? "private" : "public"),
-    stars: Number.isInteger(repo && repo.stargazers_count) ? repo.stargazers_count : 0,
-    cloneUrl: clean(repo && repo.clone_url),
-    sshUrl: clean(repo && repo.ssh_url),
-    htmlUrl: clean(repo && repo.html_url),
-    updatedAt: clean(repo && repo.updated_at)
+    stars,
+    cloneUrl: clean(repo && (repo.clone_url || repo.cloneUrl)),
+    sshUrl: clean(repo && (repo.ssh_url || repo.sshUrl)),
+    htmlUrl: clean(repo && (repo.html_url || repo.htmlUrl)),
+    updatedAt: clean(repo && (repo.updated_at || repo.updatedAt))
   };
 }
 
@@ -491,9 +589,7 @@ function clean(value) {
 
 if (typeof window !== "undefined") {
   window.SourceCompanionGitHubClient = {
-    GitHubApiClient,
-    MemorySecureTokenStore,
-    createGitHubApiClient,
+    createGitHubBridgeClient,
     normalizeGitHubError
   };
 }
@@ -501,8 +597,11 @@ if (typeof window !== "undefined") {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     GitHubApiClient,
+    GitHubBridgeClient,
     MemorySecureTokenStore,
+    UnavailableSecureTokenStore,
     createGitHubApiClient,
+    createGitHubBridgeClient,
     normalizeGitHubError,
     normalizeRepository
   };

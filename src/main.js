@@ -1943,11 +1943,11 @@
       return window.SourceCompanionGitHubClientInstance;
     }
 
+    const bridge = resolveGitHubBackendBridge();
     if (window.SourceCompanionGitHubClient &&
-      typeof window.SourceCompanionGitHubClient.createGitHubApiClient === "function") {
-      return window.SourceCompanionGitHubClient.createGitHubApiClient({
-        deviceFlow: window.SourceCompanionGitHubAuthBridge || null
-      });
+      typeof window.SourceCompanionGitHubClient.createGitHubBridgeClient === "function" &&
+      bridge) {
+      return window.SourceCompanionGitHubClient.createGitHubBridgeClient(bridge);
     }
 
     if (typeof require !== "function") {
@@ -1967,6 +1967,22 @@
     }
 
     return null;
+  }
+
+  function resolveGitHubBackendBridge() {
+    if (window.SourceCompanionGitHubBackendBridge) return window.SourceCompanionGitHubBackendBridge;
+    if (window.SourceCompanionGitHubBridge) return window.SourceCompanionGitHubBridge;
+
+    const tauriInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+    if (typeof tauriInvoke !== "function") return null;
+
+    return {
+      getAuthStatus: () => tauriInvoke("github_get_auth_status"),
+      login: () => tauriInvoke("github_login"),
+      logout: (options) => tauriInvoke("github_logout", options || {}),
+      listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", options || {}),
+      searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {})
+    };
   }
 
   function createId() {

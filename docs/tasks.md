@@ -228,14 +228,14 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 ### T38 - GitHub Auth und Basis-API-Client implementieren
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T37`
 - Definition of Done: GitHub Login und Logout funktionieren gemaess `T37`; Token werden ueber den entschiedenen sicheren Speicher gelesen und geschrieben; Auth-Status ist fuer Repository-Kontexte und GitHub-Aktionen abrufbar; User-Repositories koennen geladen und durchsucht werden; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert und lesbar angezeigt.
 - Implementierungsnotiz: API-Client klein halten: Login-Status, User-Repos und gemeinsame Fehlernormalisierung zuerst. PR-, Checks- und Publish-spezifische API-Methoden in den abhaengigen Tasks ergaenzen, nicht als versteckten Rundumschlag.
-- Notiz: `src/github-api-client.js` implementiert den kleinen GitHub-Basisclient fuer Device-Login-Hook, sicheren TokenStore-Zugriff, Logout, Auth-Status, User-Repository-List/Search und normalisierte Auth-/Scope-/RateLimit-/Netzwerk-/API-Fehler; `src/main.js` loest den Client defensiv auf, reicht Auth-Status an Repository-State-Refreshes weiter und zeigt Login-/Logout-/Repo-Suche im bestehenden GitHub-Dialog. `tests/github-api-client.test.js` deckt Auth-Status, TokenStore-Schreiben/-Loeschen, Repository-Suche und Fehlernormalisierung ab.
-- Review-Ergebnis: Nicht bestanden am 2026-06-09. Basisclient, Fehlernormalisierung und Tests sind vorhanden, aber die Implementierung verletzt noch die in `T37` festgelegte Token-Grenze.
-- Offene Review-Punkte: `src/github-api-client.js` und die Verdrahtung in `src/main.js` duerfen im Renderer keinen rohen GitHub-Token empfangen, speichern oder fuer `fetch` verwenden. Aktuell erwartet `login()` ein `loginResult.token`, speichert ohne explizit injizierten Store in `MemorySecureTokenStore` und baut `Authorization: Bearer ...` im JS-Client; `resolveGitHubClient()` injiziert nur `deviceFlow`, aber keinen `SecureTokenStore`-/Backend-API-Adapter. T38 muss die T37-Grenze einhalten: Token lesen/schreiben/loeschen ueber `SecureTokenStore` bzw. backend-only Bridge, und der Renderer bekommt nur tokenfreie Auth-/Repo-/Fehlerergebnisse.
+- Notiz: Review-Punkt adressiert: `src/github-api-client.js` trennt jetzt einen tokenfreien Renderer-Bridge-Client von der backend-/testseitigen Token-API, nutzt ohne explizit injizierten SecureTokenStore keinen Memory-Fallback mehr und exportiert im Browser nur die Bridge-Fassade. `src/main.js` erstellt GitHub-Clients ueber eine backend-only Bridge bzw. Tauri-Commands statt ueber DeviceFlow/Tokenzugriff im Renderer; neue Tests sichern tokenfreie Bridge-Ergebnisse und fehlenden Store-Fallback ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
 
 ### T39 - Clone per URL bauen
 
