@@ -64,14 +64,19 @@ The static web prototype can also be opened directly from `index.html`, but loca
 
 ## Testing
 
-The current automated coverage uses Node's built-in test runner. Until a package-level test script is added, run:
+The current automated coverage uses Node's built-in test runner:
 
 ```powershell
-$env:NODE_OPTIONS='--preserve-symlinks --preserve-symlinks-main'
-node --test tests/*.test.js
+npm test
 ```
 
-For desktop smoke coverage, see [docs/desktop-full-ui-parity.md](docs/desktop-full-ui-parity.md). Rust format/build and live Tauri checks require a local environment with `cargo`.
+For desktop asset smoke coverage, run:
+
+```powershell
+npm run desktop:assets
+```
+
+GitHub Actions runs Node tests, the desktop asset smoke check, Rust formatting, and `cargo check` for the Tauri crate on pushes and pull requests. The workflow installs the Linux system dependencies required by Tauri before the Rust check. Live desktop smoke coverage still requires a local environment with `cargo`; see [docs/desktop-full-ui-parity.md](docs/desktop-full-ui-parity.md).
 
 ## Documentation
 

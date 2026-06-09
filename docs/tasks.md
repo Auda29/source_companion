@@ -579,10 +579,11 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 
 ### T59 - GitHub Actions CI fuer Tests und Builds einrichten
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T24`, `T48`, `T56`
 - Definition of Done: Repository enthaelt einen GitHub Actions Workflow, der auf Pull Requests und Pushes laeuft; Node-/Frontend-Tests, relevante Lint-/Format-/Smoke-Checks und Tauri/Rust-Build- oder Check-Schritte sind abgedeckt; fehlende Systemabhaengigkeiten fuer Tauri werden im Workflow installiert oder klar dokumentiert; CI-Status ist in README oder Dokumentation beschrieben.
 - Implementierungsnotiz: Workflow unter `.github/workflows/` anlegen. Erst vorhandene Skripte aus `package.json` nutzen; falls Skripte fehlen, kleine klare Scripts ergaenzen. Keine Release-/Publishing-Automation in diesem Task bauen, nur Build/Test/Check.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 umgesetzt: `.github/workflows/ci.yml` laeuft auf Pushes und Pull Requests, installiert Node-Abhaengigkeiten, fuehrt `npm run ci:node` fuer Desktop-Asset-Smoke und Node-Tests aus, installiert Tauri-Linux-Systemabhaengigkeiten und prueft die Tauri-Rust-Crate mit `cargo fmt --check` und `cargo check`. `package.json` enthaelt jetzt klare `test`- und `ci:node`-Skripte und nutzt die bestehenden Preserve-Symlink-Flags fuer Node-Checks; README beschreibt den CI-Status und die lokalen Check-Kommandos.
+- Review-Ergebnis: Bestanden am 2026-06-09. `.github/workflows/ci.yml` laeuft auf Pushes und Pull Requests, deckt Node-Tests und Desktop-Asset-Smoke ueber `npm run ci:node` ab und prueft die Tauri-Rust-Crate mit installierten Linux-Systemabhaengigkeiten per `cargo fmt --check` und `cargo check`. `package.json` enthaelt klare `test`-/`ci:node`-Skripte, und README beschreibt CI-Status sowie lokale Check-Kommandos. `npm run ci:node` bestand lokal; Rust-Format/Check konnte lokal nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
 - Offene Review-Punkte: -

@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "desktop:assets": "node scripts/copy-desktop-assets.js",
+    "test": "node --preserve-symlinks --preserve-symlinks-main --test tests/*.test.js",
+    "ci:node": "npm run desktop:assets && npm test",
+    "desktop:assets": "node --preserve-symlinks --preserve-symlinks-main scripts/copy-desktop-assets.js",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build"
   },
