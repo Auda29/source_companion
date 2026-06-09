@@ -557,13 +557,13 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 
 ### T36 - Umschalten zwischen Floating Window und Full UI umsetzen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T56`, `T45`
 - Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
 - Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
 - Notiz: 2026-06-09 umgesetzt: Der Renderer schaltet zwischen Floating Window und Full UI ueber denselben Repository-/Tab-State um und ruft in der Desktop-App den whitelisted Tauri-Command `desktop_set_window_mode` fuer Groesse, Mindestgroesse und Always-on-top-Status auf. Der native Command startet keine zweite UI-Instanz und fuehrt keine Git-Operationen aus; ein fokussierter Renderer-Test deckt aktiven Tab, laufenden Queue-Snapshot, Commit-Message und den Rueckwechsel ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. Renderer-Umschaltung zwischen Floating Window und Full UI arbeitet auf demselben Repository-/Tab-State, erhaelt aktiven Tab, laufenden Queue-Snapshot, Fehler und Commit-Message und nutzt den whitelisted Desktop-Bridge-Command `desktop_set_window_mode`. Der native Tauri-Command passt nur Groesse, Mindestgroesse und Always-on-top des bestehenden Fensters an und startet keine zweite UI-Instanz oder Git-Operation. Fokussierte Renderer-/Desktop-Bridge-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T57 - Dokumentation aktualisieren und auf Englisch konsolidieren
