@@ -14,6 +14,7 @@ use std::{
     thread,
 };
 use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri::{LogicalSize, Size};
 
 struct DesktopBridgeState {
     worker: DesktopBridgeWorker,
@@ -293,6 +294,39 @@ fn repository_pick_publish_folder(app: tauri::AppHandle) -> Result<Value, String
 }
 
 #[tauri::command]
+fn desktop_set_window_mode(window: tauri::Window, request: Option<Value>) -> Result<Value, String> {
+    let mode = request
+        .as_ref()
+        .and_then(|value| value.get("mode"))
+        .and_then(Value::as_str)
+        .unwrap_or("full");
+
+    let (mode, min_width, min_height, width, height, always_on_top) = if mode == "floating" {
+        ("floating", 360.0, 420.0, 420.0, 560.0, true)
+    } else {
+        ("full", 960.0, 640.0, 1280.0, 840.0, false)
+    };
+
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize {
+            width: min_width,
+            height: min_height,
+        })))
+        .map_err(|error| format!("Failed to update window minimum size: {error}"))?;
+    window
+        .set_size(Size::Logical(LogicalSize { width, height }))
+        .map_err(|error| format!("Failed to update window size: {error}"))?;
+    window
+        .set_always_on_top(always_on_top)
+        .map_err(|error| format!("Failed to update window stacking mode: {error}"))?;
+
+    Ok(json!({
+        "ok": true,
+        "mode": mode
+    }))
+}
+
+#[tauri::command]
 fn repository_open(
     state: tauri::State<'_, DesktopBridgeState>,
     request: Option<Value>,
@@ -544,6 +578,7 @@ pub fn run() {
             repository_pick_folder,
             repository_pick_clone_target_folder,
             repository_pick_publish_folder,
+            desktop_set_window_mode,
             repository_open,
             repository_load_state,
             repository_load_file_diff,

@@ -546,22 +546,23 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 
 ### T45 - Floating Window Modus bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T56`, `T44`
 - Definition of Done: Die Desktop-App bietet gemaess `T44` ein kleines Floating Window fuer den aktiven Repository-Kontext; es zeigt Repository, Branch, Change-Zaehler, Status/Fehler und kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; alle Aktionen nutzen denselben Repository-State und dieselbe Operation Queue wie die Full UI und fuehren nicht zu doppelten Git-Operationen oder versteckten Fehlern.
 - Implementierungsnotiz: Floating Window ist der kompakte Desktop-Modus. Es soll schnell erreichbar sein und wenig Flaeche einnehmen, aber keine wichtigen Git-Fehler verstecken.
 - Notiz: 2026-06-09 umgesetzt: Die Renderer-UI bietet einen Floating-Window-Modus fuer den aktiven Repository-Kontext mit Repository-/Branch-/Upstream-/Divergenz-Anzeige, Change-Zaehlern, kompakter Commit-Message, Commit, Commit and Push, Push, Pull/Sync, Refresh und Open-Full-UI-Aktion. Die Aktionen rufen dieselben Commit-/Sync-/Refresh-Pfade wie die Full UI auf und nutzen damit denselben Repository-State, dieselbe Desktop-Bridge und dieselbe Operation Queue; fokussierter Renderer-Test deckt Rendering sowie geteilte Commit-/Push-Runner ab. Native Fensterumschaltung bleibt fuer `T36`.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. Der Floating-Window-Modus zeigt den aktiven Repository-Kontext mit Repository, Branch, Upstream/Divergenz, Change-Zaehlern, Status/Fehler sowie Commit, Commit and Push, Push, Pull/Sync, Refresh und Open-Full-UI-Aktion. Die Aktionen laufen ueber dieselben Commit-/Sync-/Refresh-Pfade wie die Full UI und nutzen damit denselben Repository-State, dieselbe Desktop-Bridge und dieselbe Operation Queue; fokussierte Renderer-/Desktop-Bridge-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags. Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T36 - Umschalten zwischen Floating Window und Full UI umsetzen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T56`, `T45`
 - Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
 - Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
+- Notiz: 2026-06-09 umgesetzt: Der Renderer schaltet zwischen Floating Window und Full UI ueber denselben Repository-/Tab-State um und ruft in der Desktop-App den whitelisted Tauri-Command `desktop_set_window_mode` fuer Groesse, Mindestgroesse und Always-on-top-Status auf. Der native Command startet keine zweite UI-Instanz und fuehrt keine Git-Operationen aus; ein fokussierter Renderer-Test deckt aktiven Tab, laufenden Queue-Snapshot, Commit-Message und den Rueckwechsel ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` nicht installiert ist.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -572,5 +573,15 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 - Abhaengigkeiten: `T24`, `T33`, `T48`, `T49`, `T56`, `T45`, `T36`
 - Definition of Done: `README.md` und zentrale Dokumentation sind auf den aktuellen Produkt- und Implementierungsstand gebracht und konsistent auf Englisch formuliert; beschrieben sind Web-Prototyp, Tauri-Desktop-Ziel, Full UI, Floating Window, Git/GitHub-Funktionsumfang, Scope-Grenzen, Setup/Start, Teststrategie und bekannte Einschraenkungen.
 - Implementierungsnotiz: Vor allem `README.md`, `docs/architecture.md`, `docs/plan.md`, Desktop-Dokumente und relevante Checklisten pruefen. Deutsche Planungsnotizen duerfen als historische Arbeitsnotizen bestehen bleiben, aber nutzernahe Dokumentation soll Englisch sein. Keine Produktfeatures bei der Dokumentationsarbeit neu erfinden.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T59 - GitHub Actions CI fuer Tests und Builds einrichten
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T24`, `T48`, `T56`
+- Definition of Done: Repository enthaelt einen GitHub Actions Workflow, der auf Pull Requests und Pushes laeuft; Node-/Frontend-Tests, relevante Lint-/Format-/Smoke-Checks und Tauri/Rust-Build- oder Check-Schritte sind abgedeckt; fehlende Systemabhaengigkeiten fuer Tauri werden im Workflow installiert oder klar dokumentiert; CI-Status ist in README oder Dokumentation beschrieben.
+- Implementierungsnotiz: Workflow unter `.github/workflows/` anlegen. Erst vorhandene Skripte aus `package.json` nutzen; falls Skripte fehlen, kleine klare Scripts ergaenzen. Keine Release-/Publishing-Automation in diesem Task bauen, nur Build/Test/Check.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -

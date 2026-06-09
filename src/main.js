@@ -538,8 +538,10 @@
   }
 
   function setUiMode(mode) {
-    state.uiMode = mode === "floating" ? "floating" : "full";
+    const nextMode = mode === "floating" ? "floating" : "full";
+    state.uiMode = nextMode;
     render();
+    applyNativeWindowMode(nextMode);
   }
 
   function applyUiModeToShell() {
@@ -554,6 +556,28 @@
     if (typeof floatingModeButton.setAttribute === "function") {
       floatingModeButton.setAttribute("aria-pressed", state.uiMode === "floating" ? "true" : "false");
     }
+  }
+
+  function applyNativeWindowMode(mode) {
+    const bridge = state.desktopBridge;
+    if (!bridge || typeof bridge.setWindowMode !== "function") return;
+
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId) || null;
+    Promise.resolve(bridge.setWindowMode({
+      mode,
+      activeRepositoryId: active ? active.id : null,
+      activeRepositoryPath: active ? active.path : null
+    })).then((result) => {
+      if (!result || result.ok !== false) return;
+      const message = result.error && result.error.message
+        ? result.error.message
+        : "Desktop window mode could not be changed.";
+      setMessage("error", message);
+      render();
+    }).catch((error) => {
+      setMessage("error", error && error.message ? error.message : "Desktop window mode could not be changed.");
+      render();
+    });
   }
 
   function renderWorkspace() {
@@ -3448,6 +3472,10 @@
   }
 
   function floatingStatus(repo) {
+    if (state.message && state.message.kind === "error") {
+      return { kind: "error", message: state.message.text };
+    }
+
     const running = [
       repo.commitAction,
       repo.syncAction,

@@ -1027,6 +1027,121 @@ test("floating window renders active repository and uses shared commit and sync 
   assert.equal(syncRequest.message, "");
 });
 
+test("floating and full ui switching preserves active repository state", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const openForm = new FakeForm("open", {
+    path: "C:\\code\\project"
+  });
+  const workspaceElement = new FakeFloatingWorkspaceElement();
+  const modeButton = new FakeElement();
+  const document = new FakeDocument([openForm], {
+    workspaceContent: workspaceElement,
+    floatingModeButton: modeButton
+  });
+  const windowModeRequests = [];
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      SourceCompanionInitialMode: "floating",
+      confirm: () => true,
+      SourceCompanionDesktopBridge: {
+        setWindowMode: async (request) => {
+          windowModeRequests.push(request);
+          return { ok: true, mode: request.mode };
+        }
+      },
+      SourceCompanionRepositoryState: {
+        loadRepositoryState: async () => ({
+          kind: "git-repository",
+          health: "ready",
+          error: null,
+          operations: {
+            running: [{ kind: "push", status: "running" }],
+            queued: [],
+            completed: [],
+            lastCompleted: null
+          },
+          github: null,
+          git: {
+            branch: { name: "main", detached: false, headSha: "abc123456789" },
+            remote: { name: "origin", kind: "github" },
+            remotes: [],
+            upstream: { name: "origin/main" },
+            divergence: { ahead: 1, behind: 0 },
+            files: [],
+            staged: [{ path: "src/app.js", status: "M ", type: "modified" }],
+            unstaged: [],
+            untracked: [],
+            conflicted: [],
+            stashes: [],
+            history: {
+              status: "ready",
+              message: "No commits loaded.",
+              commits: [],
+              head: null,
+              selectedCommit: null,
+              selectedDiff: "",
+              error: null
+            }
+          }
+        })
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await openForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(workspaceElement.innerHTML, /floating-window/);
+  workspaceElement.textarea.value = "Preserve this message";
+  workspaceElement.textarea.listeners.input();
+
+  workspaceElement.openFullButton.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(workspaceElement.innerHTML, /repo-summary/);
+  assert.match(workspaceElement.innerHTML, /C:\\code\\project/);
+  assert.match(workspaceElement.innerHTML, /push running/);
+  assert.match(workspaceElement.innerHTML, /Preserve this message/);
+  assert.equal(modeButton.textContent, "Floating Window");
+
+  modeButton.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(workspaceElement.innerHTML, /floating-window/);
+  assert.match(workspaceElement.innerHTML, /Preserve this message/);
+  assert.deepEqual(windowModeRequests.map((request) => ({
+    mode: request.mode,
+    activeRepositoryId: request.activeRepositoryId,
+    activeRepositoryPath: request.activeRepositoryPath
+  })), [
+    {
+      mode: "full",
+      activeRepositoryId: "repo-1",
+      activeRepositoryPath: "C:\\code\\project"
+    },
+    {
+      mode: "floating",
+      activeRepositoryId: "repo-1",
+      activeRepositoryPath: "C:\\code\\project"
+    }
+  ]);
+});
+
 function repositoryStateWithGitHub() {
   return {
     kind: "github-authenticated",

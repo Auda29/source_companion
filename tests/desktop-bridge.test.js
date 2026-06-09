@@ -20,6 +20,7 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
     "pickRepositoryFolder",
     "pickCloneTargetFolder",
     "pickPublishFolder",
+    "setWindowMode",
     "openRepository",
     "loadRepositoryState",
     "loadFileDiff",
@@ -55,6 +56,34 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runShellCommand"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "readFile"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "readGitHubToken"), false);
+});
+
+test("tauri desktop bridge maps window mode switching to a native command", async () => {
+  const calls = [];
+  const bridge = createTauriDesktopBridge({
+    invoke: async (command, payload) => {
+      calls.push({ command, payload });
+      return { ok: true, mode: payload.request.mode };
+    }
+  });
+
+  const result = await bridge.setWindowMode({
+    mode: "floating",
+    activeRepositoryId: "repo-1",
+    activeRepositoryPath: "C:\\repo"
+  });
+
+  assert.deepEqual(result, { ok: true, mode: "floating" });
+  assert.deepEqual(calls, [{
+    command: "desktop_set_window_mode",
+    payload: {
+      request: {
+        mode: "floating",
+        activeRepositoryId: "repo-1",
+        activeRepositoryPath: "C:\\repo"
+      }
+    }
+  }]);
 });
 
 test("tauri desktop bridge maps methods to explicit command names", async () => {

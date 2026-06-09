@@ -4,6 +4,7 @@ const DESKTOP_BRIDGE_COMMANDS = Object.freeze({
   pickRepositoryFolder: "repository_pick_folder",
   pickCloneTargetFolder: "repository_pick_clone_target_folder",
   pickPublishFolder: "repository_pick_publish_folder",
+  setWindowMode: "desktop_set_window_mode",
   openRepository: "repository_open",
   loadRepositoryState: "repository_load_state",
   loadFileDiff: "repository_load_file_diff",
@@ -124,6 +125,7 @@ function createDesktopBridgeBackend({
     pickRepositoryFolder: async () => unavailableNativeDialog("repository"),
     pickCloneTargetFolder: async () => unavailableNativeDialog("clone-target"),
     pickPublishFolder: async () => unavailableNativeDialog("publish"),
+    setWindowMode: async (request = {}) => unavailableWindowMode(request.mode),
     openRepository: async (request = {}) => modules.loadRepositoryState(withQueueState(request, operationQueue, execute)),
     loadRepositoryState: async (request = {}) => modules.loadRepositoryState(withQueueState(request, operationQueue, execute)),
     loadFileDiff: async (request = {}) => modules.loadFileDiff(withExecute(request, execute)),
@@ -351,6 +353,17 @@ function unavailableNativeDialog(kind) {
     error: {
       kind: "native-folder-dialog-unavailable",
       message: "Native folder dialogs are only available through the Tauri desktop bridge."
+    }
+  };
+}
+
+function unavailableWindowMode(mode) {
+  return {
+    ok: false,
+    mode: clean(mode) === "floating" ? "floating" : "full",
+    error: {
+      kind: "native-window-mode-unavailable",
+      message: "Native window mode switching is only available through the Tauri desktop bridge."
     }
   };
 }

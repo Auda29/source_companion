@@ -5,6 +5,7 @@ Die Desktop-Bridge ist die einzige Renderer-Fassade fuer lokale Repository-Aktio
 ## Renderer-Fassade
 
 `src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Clone-, Publish-, Branch-, Sync-, Merge- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist. Tauri-Aufrufe uebergeben Renderer-Anfragen gekapselt als `{ request: ... }`, damit native Handler keine freie Argument- oder Shell-Flaeche erhalten. Native Ordnerdialoge bleiben auf die erlaubten Open-/Clone-/Publish-Flows begrenzt; Watcher-Befehle starten, lesen und stoppen nur Repository-Status-Watcher fuer konkrete Repository-Kontexte.
+Das Umschalten zwischen Floating Window und Full UI nutzt eine eigene native Window-Mode-Methode; Repository-Kontext, Tabs, Queue und Fehler bleiben im bestehenden Renderer-/Worker-State.
 
 Erlaubte Methoden:
 
@@ -12,6 +13,7 @@ Erlaubte Methoden:
 - `pickRepositoryFolder`
 - `pickCloneTargetFolder`
 - `pickPublishFolder`
+- `setWindowMode`
 - `loadRepositoryState`
 - `loadFileDiff`
 - `runFileAction`
@@ -35,6 +37,7 @@ Zugehoerige Tauri-Command-Namen:
 - `repository_pick_folder`
 - `repository_pick_clone_target_folder`
 - `repository_pick_publish_folder`
+- `desktop_set_window_mode`
 - `repository_load_state`
 - `repository_load_file_diff`
 - `repository_run_file_action`
@@ -59,6 +62,8 @@ Die Bridge-Backend-Implementierung delegiert Git-Ausfuehrungen ueber `GitOperati
 `src-tauri/src/lib.rs` registriert fuer jeden erlaubten Tauri-Command einen `#[tauri::command]`-Handler und einen `invoke_handler`. Diese Handler starten einen persistenten `src/desktop-bridge-worker.js`-Prozess mit `--preserve-symlinks` und `--preserve-symlinks-main` und senden JSON-RPC-artige Methoden an `createDesktopBridgeBackend()`. Dadurch bleibt die Queue pro Desktop-Laufzeit erhalten, und Git-Ausfuehrungen laufen weiterhin durch die bestehende JS-Git-Schicht statt durch freie native Commands.
 
 Die drei Ordnerdialog-Commands laufen nativ ueber `tauri-plugin-dialog` und liefern nur `{ ok, canceled, path, error }` zurueck. Sie lesen oder schreiben keine Dateien und geben keine generische Dateisystem-Schnittstelle frei. Der Renderer schreibt den ausgewaehlten Pfad in das jeweilige Open-, Clone- oder Publish-Feld und laesst die bestehenden Validierungen fuer ungueltige oder fehlende Pfade aktiv.
+
+`desktop_set_window_mode` ist auf die Werte `floating` und `full` begrenzt. Der Command passt nur Groesse, Mindestgroesse und Always-on-top-Status des bestehenden Hauptfensters an; er startet keine zweite UI-Instanz, erzeugt keine Repository-Duplikate und fuehrt keine Git-Operationen aus. Der Renderer sendet dabei nur den Zielmodus sowie optionale aktive Repository-Metadaten fuer Nachvollziehbarkeit.
 
 Die Watcher-Commands laufen im persistenten Bridge-Worker. `startRepositoryWatch` erstellt einen `RepositoryStatusWatcher` fuer den Repository-Kontext, `getRepositoryWatch` liefert Snapshot, letzten geladenen Repository-State und letzten Fehler, und `stopRepositoryWatch` schliesst den Handle beim Tab-Schliessen. Refreshes nutzen weiter Debounce, Busy-Deferral und denselben `loadRepositoryState`-Pfad wie die Full UI.
 
