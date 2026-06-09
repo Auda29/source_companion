@@ -133,6 +133,206 @@ async function runPublishAction({
   });
 }
 
+async function preparePublishPreflight({
+  repositoryPath,
+  name,
+  description = "",
+  visibility = "private",
+  initIfNeeded = false,
+  publicConfirmed = false,
+  githubClient,
+  execute = runGitCommand
+} = {}) {
+  const request = buildPublishActionRequest({
+    repositoryPath,
+    name,
+    description,
+    visibility,
+    initIfNeeded
+  });
+  if (!request.ok) return request;
+
+  const checks = [];
+  const publicCheck = createPreflightCheck({
+    id: "public-visibility-confirmed",
+    label: "Public visibility confirmation",
+    ok: request.visibility !== "public" || Boolean(publicConfirmed),
+    message: request.visibility === "public"
+      ? "Public GitHub repository visibility was explicitly confirmed."
+      : "Repository will be private."
+  });
+  checks.push(publicCheck);
+  if (!publicCheck.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: "Confirm public GitHub visibility before preparing publish.",
+      error: {
+        kind: "public-confirmation-required",
+        message: "Public repositories are visible to everyone."
+      }
+    });
+  }
+
+  if (!githubClient || typeof githubClient.getAuthStatus !== "function") {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: "GitHub login is not available in this runtime.",
+      error: {
+        kind: "github-api-unavailable",
+        message: "GitHub login is not available in this runtime."
+      }
+    });
+  }
+
+  const auth = await githubClient.getAuthStatus();
+  const authCheck = createPreflightCheck({
+    id: "github-login",
+    label: "GitHub login",
+    ok: Boolean(auth && auth.authenticated),
+    message: auth && auth.authenticated
+      ? `Logged in as ${clean(auth.user || auth.login) || "GitHub user"}.`
+      : auth && auth.error && auth.error.message
+        ? auth.error.message
+        : "GitHub login is required before publishing."
+  });
+  checks.push(authCheck);
+  if (!authCheck.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: authCheck.message,
+      error: auth && auth.error ? auth.error : {
+        kind: "github-auth-missing",
+        message: "GitHub login is required before publishing."
+      }
+    });
+  }
+
+  const status = await execute(statusCommand(request.repositoryPath));
+  checks.push(createPreflightStepCheck(status, "local-folder", "Local folder", "Local folder is readable."));
+
+  if (!status.ok && isNotGitRepository(status)) {
+    const initCheck = createPreflightCheck({
+      id: "git-init-confirmed",
+      label: "Git init confirmation",
+      ok: request.initIfNeeded,
+      message: request.initIfNeeded
+        ? "Git init is confirmed for this folder."
+        : "This folder is not a Git repository. Confirm Git init before publishing."
+    });
+    checks.push(initCheck);
+
+    return createPreflightResult({
+      ok: request.initIfNeeded,
+      request,
+      checks,
+      message: request.initIfNeeded
+        ? "Publish inputs are ready. The publish runner can initialize Git, create the GitHub repository, set origin, and push."
+        : initCheck.message,
+      error: request.initIfNeeded ? null : {
+        kind: "git-init-required",
+        message: "Git init must be explicitly confirmed."
+      },
+      needsGitInit: true
+    });
+  }
+
+  if (!status.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: publishFailureMessage(status, "Could not inspect local repository."),
+      error: status.error
+    });
+  }
+
+  const parsed = parseStatusBranch(status.stdout);
+  const commitsCheck = createPreflightCheck({
+    id: "commits-present",
+    label: "Initial commit",
+    ok: !parsed.noCommits,
+    message: parsed.noCommits
+      ? "Create a commit before publishing this repository to GitHub."
+      : "Repository has commits."
+  });
+  checks.push(commitsCheck);
+  if (!commitsCheck.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: commitsCheck.message,
+      error: {
+        kind: "no-commits",
+        message: "Publish needs an initial commit before origin can be pushed."
+      },
+      needsCommit: true
+    });
+  }
+
+  const branchCheck = createPreflightCheck({
+    id: "local-branch",
+    label: "Local branch",
+    ok: Boolean(parsed.branch && !parsed.detached),
+    message: parsed.branch && !parsed.detached
+      ? `Current branch is ${parsed.branch}.`
+      : "Check out a local branch before publishing."
+  });
+  checks.push(branchCheck);
+  if (!branchCheck.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: branchCheck.message,
+      error: {
+        kind: "branch-required",
+        message: "Publish needs a local branch."
+      }
+    });
+  }
+
+  const remoteCheck = await execute(remoteListCommand(request.repositoryPath));
+  checks.push(createPreflightStepCheck(remoteCheck, "remote-inspection", "Remote configuration", "Existing remotes were inspected."));
+  if (!remoteCheck.ok) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: publishFailureMessage(remoteCheck, "Could not inspect existing remotes."),
+      error: remoteCheck.error
+    });
+  }
+
+  const remotes = parseRemotes(remoteCheck.stdout);
+  if (remotes.length > 0) {
+    return createPreflightResult({
+      ok: false,
+      request,
+      checks,
+      message: "This repository already has a remote. Review the remote before publishing.",
+      error: {
+        kind: "remote-already-configured",
+        message: "Existing remotes must be reviewed before publishing."
+      },
+      remotes
+    });
+  }
+
+  return createPreflightResult({
+    ok: true,
+    request,
+    checks,
+    message: "Publish inputs are ready. The publish runner can create the GitHub repository, set origin, and push."
+  });
+}
+
 function buildPublishActionRequest({
   repositoryPath,
   name,
@@ -237,6 +437,61 @@ async function prepareLocalRepository({ repositoryPath, initIfNeeded, execute })
     branch: parsed.branch,
     steps
   };
+}
+
+function createPreflightResult({
+  ok,
+  request,
+  checks = [],
+  message,
+  error = null,
+  needsGitInit = false,
+  needsCommit = false,
+  remotes = []
+}) {
+  return {
+    ok,
+    action: "publish-preflight",
+    request,
+    repository: null,
+    visibility: request ? request.visibility : null,
+    command: null,
+    steps: [],
+    checks,
+    stdout: "",
+    stderr: "",
+    exitCode: null,
+    message,
+    error: ok ? null : error || {
+      kind: "publish-preflight-error",
+      message
+    },
+    needsGitInit,
+    needsCommit,
+    remotes
+  };
+}
+
+function createPreflightCheck({ id, label, ok, message }) {
+  return {
+    id,
+    label,
+    ok: Boolean(ok),
+    message
+  };
+}
+
+function createPreflightStepCheck(result, id, label, successMessage) {
+  return createPreflightCheck({
+    id,
+    label,
+    ok: Boolean(result && result.ok),
+    message: result && result.ok
+      ? successMessage
+      : result && result.error && result.error.message
+        ? result.error.message
+        : "Git command failed."
+  });
 }
 
 function createPublishResult({
@@ -439,5 +694,6 @@ function clean(value) {
 
 module.exports = {
   buildPublishActionRequest,
+  preparePublishPreflight,
   runPublishAction
 };

@@ -471,6 +471,36 @@ textarea {
   gap: 8px;
 }
 
+.publish-checks {
+  display: grid;
+  gap: 6px;
+}
+
+.publish-check {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.publish-check.success {
+  border-color: #aed8bc;
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.publish-check.error {
+  border-color: #efb3b3;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.publish-check span {
+  overflow-wrap: anywhere;
+}
+
 .stash-form {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto auto auto;

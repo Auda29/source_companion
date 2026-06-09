@@ -263,32 +263,34 @@ Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43
 
 ### T41 - GitHub Repository-Erstellung fuer Publish implementieren
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T38`
 - Definition of Done: Der GitHub API Client kann fuer den eingeloggten User ein Repository mit Name, optionaler Beschreibung und private/public Sichtbarkeit erstellen; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler, belegte Repository-Namen und sonstige API-Fehler werden strukturiert und lesbar zurueckgegeben; Tokens bleiben backend-intern und werden nicht in Renderer-State, Remote-URLs oder Git-Argumente geschrieben.
 - Implementierungsnotiz: Nur die Publish-spezifische GitHub-Repo-Erstellung ergaenzen. Keine GitHub-Dashboard-, Org-Admin- oder Issue-Funktionen aufnehmen.
-- Notiz: `src/github-api-client.js` unterstuetzt jetzt tokenfreie Bridge- und direkte API-Repository-Erstellung fuer Publish mit Name, optionaler Beschreibung und private/public Sichtbarkeit; `github_create_repository` ist als Tauri-Bridge-Command vorbereitet. Tests sichern tokenfreie Bridge-Ergebnisse, POST `/user/repos`, belegte Namen/API-Fehler und die bestehende Auth-/Token-Grenze ab.
-- Review-Ergebnis: Nicht bestanden am 2026-06-09. Die Repository-Erstellung ist grundsaetzlich vorhanden, aber ein Scope-Fehlerfall verletzt die Definition of Done.
-- Offene Review-Punkte: `GitHubApiClient.createRepository()` muss vor dem POST denselben Auth-/Scope-Vertrag wie `listUserRepositories()` einhalten. Aktuell ruft die Methode bei einem gespeicherten Token mit nur `read:user` trotzdem `POST /user/repos` auf und kann `ok: true` liefern, statt strukturiert `github-scope-missing` zurueckzugeben; bitte mit Regressionstest fuer fehlende Scopes bei Repository-Erstellung absichern.
+- Notiz: Review-Punkt adressiert: `GitHubApiClient.createRepository()` prueft jetzt vor `POST /user/repos` denselben Auth-/Scope-Vertrag wie `listUserRepositories()` und gibt bei fehlendem `repo`-Scope strukturiert `github-scope-missing` zurueck, ohne die API aufzurufen. Regressionstest fuer fehlende Scopes bei Repository-Erstellung ergaenzt; fokussierter GitHub-Client-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. `GitHubApiClient.createRepository()` erstellt User-Repositories ueber `POST /user/repos` mit Name, optionaler Beschreibung und private/public Sichtbarkeit, normalisiert fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler, belegte Repository-Namen und API-Fehler, und schuetzt Tokens durch backend-/testseitige SecureTokenStore-Nutzung sowie tokenfreie Renderer-Bridge-Ergebnisse. Fokussierter GitHub-Client-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Offene Review-Punkte: -
 
 ### T42 - Publish-Vorbedingungen und UI-Flow bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T4`, `T8`, `T14`, `T38`, `T41`
 - Definition of Done: Publish to GitHub zeigt den ausgewaehlten lokalen Ordner oder Repository-Kontext, schlaegt einen Repository-Namen aus dem Ordnernamen vor, bietet optionale Beschreibung sowie private/public Auswahl an und prueft vor Ausfuehrung GitHub-Login, Ordner-ohne-Git, Git-Repo-ohne-Commits und vorhandene Remote-Situation; `git init` fuer Ordner ohne Git und Public Publish brauchen eine sichtbare Bestaetigung; bei fehlenden Commits wird zum Commit-Flow gefuehrt statt automatisch zu committen.
 - Implementierungsnotiz: Dieser Task startet noch keinen versteckten Publish-Durchlauf. Er bereitet die validierten Eingaben und bestaetigten Entscheidungen fuer den Runner aus `T43` vor.
-- Review-Ergebnis: -
+- Notiz: Review-Punkt adressiert: Da `T41` inzwischen abgeschlossen ist, wurde T42 erneut auf `review` gesetzt. Die bestehende Publish-Preflight-Umsetzung bleibt unveraendert; fokussierte Tests fuer Publish-Preflight und Dialog-Flow bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. Publish to GitHub bereitet den ausgewaehlten lokalen Ordner bzw. Repository-Kontext mit vorgeschlagenem Repository-Namen, optionaler Beschreibung und private/public Auswahl vor; die Preflight-Pruefung validiert GitHub-Login, Ordner-ohne-Git, fehlende Commits, lokale Branch-Situation und vorhandene Remotes, verlangt sichtbare Bestaetigungen fuer Git init und Public Publish und startet weder Git init noch Commit noch Publish-Runner. Fokussierte Publish-/Dialog-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T43 - Publish-Runner mit Remote-Schutz und Initial Push bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T6`, `T7`, `T16`, `T41`, `T42`
 - Definition of Done: Der Publish-Runner erstellt das GitHub-Repository, initialisiert bei bestaetigtem Ordner-ohne-Git das lokale Git-Repo, setzt `origin` nur nach klarer Remote-Pruefung, ueberschreibt vorhandene Remotes nie still, fuehrt den initialen Push bzw. Publish Branch aus und oeffnet oder aktualisiert danach den Repository-Tab; Fortschritt, Erfolg, GitHub-Fehler, Git-Fehler und rohe Ausgaben sind im UI sichtbar.
 - Implementierungsnotiz: Git-Kommandos laufen nur ueber den whitelisted Git Wrapper und die Operation Queue. HTTPS/Git Credential Manager priorisieren; kein Token in Remote-URLs oder Git-Argumente schreiben; SSH-Fehler auf das lokale Git/SSH-Setup zurueckfuehren.
+- Notiz: Publish-Runner erstellt das GitHub-Repository ueber den GitHub-Client, prueft vorhandene Remotes vor `origin`-Setzung, initialisiert Git nur bei bestaetigtem Ordner-ohne-Git, pusht den aktuellen Branch per whitelisted Git Wrapper und liefert Fortschritt, rohe Ausgaben sowie GitHub-/Git-Fehler an die UI. Fokussierte Publish-/Dialog-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

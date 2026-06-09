@@ -10,6 +10,7 @@ const test = require("node:test");
 const { runGitCommand } = require("../src/git-cli-wrapper");
 const {
   buildPublishActionRequest,
+  preparePublishPreflight,
   runPublishAction
 } = require("../src/repository-publish-actions");
 
@@ -71,6 +72,76 @@ test("requires GitHub auth before inspecting local repository", async () => {
   assert.equal(result.ok, false);
   assert.equal(result.error.kind, "github-auth-missing");
   assert.equal(executed, false);
+});
+
+test("preflight prepares confirmed Git init without running init", async () => {
+  const repositoryPath = path.join(os.tmpdir(), "source-companion-publish-preflight-no-git");
+  const executed = [];
+  const result = await preparePublishPreflight({
+    repositoryPath,
+    name: "repo",
+    initIfNeeded: true,
+    publicConfirmed: false,
+    githubClient: authenticatedGitHubClient(),
+    execute: async (command) => {
+      executed.push(command.action);
+      return {
+        ok: false,
+        action: command.action,
+        args: [],
+        stdout: "",
+        stderr: "fatal: not a git repository",
+        exitCode: 128,
+        error: {
+          kind: "git-error",
+          message: "Git command failed."
+        }
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "publish-preflight");
+  assert.equal(result.needsGitInit, true);
+  assert.deepEqual(executed, ["status"]);
+});
+
+test("preflight sends repositories without commits to commit flow", async () => {
+  const repositoryPath = path.join(os.tmpdir(), "source-companion-publish-preflight-no-commits");
+  const result = await preparePublishPreflight({
+    repositoryPath,
+    name: "repo",
+    githubClient: authenticatedGitHubClient(),
+    execute: async (command) => {
+      assert.equal(command.action, "status");
+      return gitResult(command, "## No commits yet on main\n");
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.needsCommit, true);
+  assert.equal(result.error.kind, "no-commits");
+  assert.match(result.message, /commit/i);
+});
+
+test("preflight blocks repositories with existing remotes", async () => {
+  const repositoryPath = path.join(os.tmpdir(), "source-companion-publish-preflight-remote");
+  const result = await preparePublishPreflight({
+    repositoryPath,
+    name: "repo",
+    githubClient: authenticatedGitHubClient(),
+    execute: async (command) => {
+      if (command.action === "status") return gitResult(command, "## main\n");
+      if (command.action === "remote") {
+        return gitResult(command, "origin\thttps://github.com/octo/repo.git (fetch)\norigin\thttps://github.com/octo/repo.git (push)\n");
+      }
+      throw new Error("unexpected command");
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.kind, "remote-already-configured");
+  assert.deepEqual(result.remotes, ["origin"]);
 });
 
 test("requires explicit init for folders without Git", async () => {

@@ -301,6 +301,18 @@ class GitHubApiClient {
       };
     }
 
+    const auth = await this.getAuthStatus();
+    if (!auth.authenticated) {
+      return {
+        ok: false,
+        repository: null,
+        error: auth.error || createGitHubError({
+          kind: "github-auth-missing",
+          message: "GitHub login is required for this action."
+        })
+      };
+    }
+
     const result = await this.requestJson("/user/repos", {
       method: "POST",
       body: {

@@ -16,6 +16,7 @@
     repositorySyncActionRunner: resolveRepositorySyncActionRunner(),
     repositoryStashActionRunner: resolveRepositoryStashActionRunner(),
     repositoryCloneActionRunner: resolveRepositoryCloneActionRunner(),
+    repositoryPublishPreflightRunner: resolveRepositoryPublishPreflightRunner(),
     repositoryPublishActionRunner: resolveRepositoryPublishActionRunner(),
     githubClient: resolveGitHubClient(),
     githubAuth: noGitHubAuthStatus(),
@@ -55,7 +56,7 @@
   });
 
   document.querySelectorAll(".dialog-body").forEach((form) => {
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
       const submitter = event.submitter;
@@ -64,7 +65,7 @@
         return;
       }
 
-      const handled = handleFlow(form.dataset.flow, new FormData(form));
+      const handled = await handleFlow(form.dataset.flow, new FormData(form));
       if (handled) {
         form.reset();
         form.closest("dialog").close();
@@ -129,12 +130,30 @@
       }
     }
 
+    if (name === "publish") {
+      preparePublishDialog(dialog);
+    }
+
     dialog.showModal();
     const input = dialog.querySelector("input");
     if (input) input.focus();
   }
 
-  function handleFlow(flow, formData) {
+  function preparePublishDialog(dialog) {
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+    if (!active) return;
+
+    const pathInput = dialog.querySelector('input[name="path"]');
+    const nameInput = dialog.querySelector('input[name="name"]');
+    if (pathInput && !clean(pathInput.value)) {
+      pathInput.value = active.path;
+    }
+    if (nameInput && !clean(nameInput.value)) {
+      nameInput.value = displayNameFromPath(active.path);
+    }
+  }
+
+  async function handleFlow(flow, formData) {
     if (flow === "open") {
       return openRepository(formData.get("path"));
     }
@@ -163,12 +182,13 @@
         return false;
       }
 
-      openPublishRepository({
+      await openPublishRepository({
         path,
         name,
         description,
         visibility,
-        initIfNeeded
+        initIfNeeded,
+        publicConfirmed: visibility === "public"
       });
       return true;
     }
@@ -262,7 +282,7 @@
     runRepositoryCloneAction(tab.id);
   }
 
-  function openPublishRepository({ path, name, description, visibility, initIfNeeded }) {
+  async function openPublishRepository({ path, name, description, visibility, initIfNeeded, publicConfirmed }) {
     const existing = state.tabs.find((tab) => samePath(tab.path, path));
     if (existing) {
       state.activeTabId = existing.id;
@@ -270,52 +290,45 @@
         name,
         description,
         visibility,
-        initIfNeeded
+        initIfNeeded,
+        publicConfirmed
       };
       existing.publishAction = {
         status: "running",
-        action: "publish",
-        message: "Publishing repository to GitHub.",
+        action: "publish-preflight",
+        message: "Checking publish prerequisites.",
         completedAt: null
       };
-      existing.health = "operation-running";
-      setMessage("success", `Publishing ${name}.`);
+      setMessage("success", `Checking publish prerequisites for ${name}.`);
       render();
-      runRepositoryPublishAction(existing.id);
+      await runRepositoryPublishPreflight(existing.id);
       return;
     }
 
     const tab = createRepositoryContext({
       displayName: displayNameFromPath(path) || name,
       path,
-      entryStatus: `Publish running: ${visibility || "private"}`,
-      initialOperationKind: "publish"
+      entryStatus: `Publish preflight: ${visibility || "private"}`
     });
     tab.publishRequest = {
       name,
       description,
       visibility,
-      initIfNeeded
+      initIfNeeded,
+      publicConfirmed
     };
     tab.publishAction = {
       status: "running",
-      action: "publish",
-      message: "Publishing repository to GitHub.",
+      action: "publish-preflight",
+      message: "Checking publish prerequisites.",
       completedAt: null
     };
-    tab.health = "operation-running";
-    tab.operations.running = tab.operations.queued.map((operation) => ({
-      ...operation,
-      status: "running",
-      startedAt: new Date().toISOString()
-    }));
-    tab.operations.queued = [];
 
     state.tabs.push(tab);
     state.activeTabId = tab.id;
-    setMessage("success", `Publishing ${name}.`);
+    setMessage("success", `Checking publish prerequisites for ${name}.`);
     render();
-    runRepositoryPublishAction(tab.id);
+    await runRepositoryPublishPreflight(tab.id);
   }
 
   function openPreparedRepository(path, name, status, options = {}) {
@@ -1651,6 +1664,62 @@
     }
   }
 
+  async function runRepositoryPublishPreflight(tabId) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab || !tab.publishRequest) return;
+
+    const preparePublishPreflight = state.repositoryPublishPreflightRunner;
+    if (!preparePublishPreflight) {
+      applyPublishPreflightResult(tabId, {
+        ok: false,
+        action: "publish-preflight",
+        request: tab.publishRequest,
+        command: null,
+        checks: [],
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Publish preflight is not available in this runtime.",
+        error: {
+          kind: "publish-preflight-unavailable",
+          message: "Publish preflight is not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await preparePublishPreflight({
+        repositoryPath: tab.path,
+        name: tab.publishRequest.name,
+        description: tab.publishRequest.description,
+        visibility: tab.publishRequest.visibility,
+        initIfNeeded: tab.publishRequest.initIfNeeded,
+        publicConfirmed: tab.publishRequest.publicConfirmed,
+        githubClient: state.githubClient
+      });
+      applyPublishPreflightResult(tabId, result);
+      startRepositoryWatch(tab);
+      refreshRepositoryState(tabId, "publish-preflight");
+    } catch (error) {
+      applyPublishPreflightResult(tabId, {
+        ok: false,
+        action: "publish-preflight",
+        request: tab.publishRequest,
+        command: null,
+        checks: [],
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Publish preflight failed.",
+        error: {
+          kind: "publish-preflight-error",
+          message: error && error.message ? error.message : "Publish preflight failed."
+        }
+      });
+    }
+  }
+
   function applyCommitActionResult(tabId, result) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -1811,6 +1880,30 @@
     }
     tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
     setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Publish completed." : "Publish failed."));
+    render();
+  }
+
+  function applyPublishPreflightResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const completedAt = new Date().toISOString();
+    tab.publishAction = {
+      status: result.ok ? "succeeded" : "blocked",
+      action: "publish-preflight",
+      visibility: result.visibility || tab.publishRequest && tab.publishRequest.visibility || null,
+      repository: null,
+      checks: Array.isArray(result.checks) ? result.checks : [],
+      needsGitInit: Boolean(result.needsGitInit),
+      needsCommit: Boolean(result.needsCommit),
+      remotes: Array.isArray(result.remotes) ? result.remotes : [],
+      message: result.message,
+      error: result.error || null,
+      completedAt
+    };
+    tab.entryStatus = result.ok ? "Publish preflight ready" : "Publish preflight blocked";
+    tab.error = result.ok ? null : result.error || null;
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Publish preflight ready." : "Publish preflight blocked."));
     render();
   }
 
@@ -2162,6 +2255,31 @@
     return null;
   }
 
+  function resolveRepositoryPublishPreflightRunner() {
+    if (window.SourceCompanionRepositoryPublishActions &&
+      typeof window.SourceCompanionRepositoryPublishActions.preparePublishPreflight === "function") {
+      return window.SourceCompanionRepositoryPublishActions.preparePublishPreflight;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-publish-actions", "./src/repository-publish-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.preparePublishPreflight === "function") {
+          return loaded.preparePublishPreflight;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
   function resolveGitHubClient() {
     if (window.SourceCompanionGitHubClientInstance &&
       typeof window.SourceCompanionGitHubClientInstance.getAuthStatus === "function") {
@@ -2388,6 +2506,8 @@
     const request = repo.publishRequest || {};
     const target = request.name ? `GitHub: ${request.name}` : "GitHub repository";
     const visibility = request.visibility || repo.publishAction && repo.publishAction.visibility || "private";
+    const checks = status.checks || [];
+    const remotes = status.remotes || [];
 
     return `
       <section class="sync-panel" aria-label="Publish progress">
@@ -2399,6 +2519,25 @@
           <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
         </div>
         <div class="sync-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+        ${checks.length > 0 ? `
+          <div class="publish-checks" aria-label="Publish preflight checks">
+            ${checks.map((check) => `
+              <div class="publish-check ${check.ok ? "success" : "error"}">
+                <strong>${check.ok ? "OK" : "Blocked"}: ${escapeHtml(check.label || "Check")}</strong>
+                <span>${escapeHtml(check.message || "")}</span>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+        ${status.needsCommit ? `
+          <div class="commit-status error">Create an initial commit in the Commit box below, then run Publish to GitHub again.</div>
+        ` : ""}
+        ${status.needsGitInit ? `
+          <div class="commit-status ${status.status === "succeeded" ? "success" : "running"}">Git init for this folder has been explicitly selected and is waiting for the publish runner.</div>
+        ` : ""}
+        ${remotes.length > 0 ? `
+          <div class="commit-status error">Existing remotes: ${escapeHtml(remotes.join(", "))}</div>
+        ` : ""}
       </section>
     `;
   }

@@ -278,6 +278,37 @@ test("creates a GitHub repository with normalized API request", async () => {
   assert.equal(result.repository.visibility, "public");
 });
 
+test("blocks repository creation when stored token is missing required scopes", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "limited-token",
+    login: "octo",
+    scopes: ["read:user"],
+    tokenSource: "device-flow"
+  });
+
+  let fetchCalled = false;
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return createResponse(201, {
+        name: "published",
+        full_name: "octo/published",
+        owner: { login: "octo" }
+      });
+    }
+  });
+
+  const result = await client.createRepository({ name: "published" });
+  assert.equal(result.ok, false);
+  assert.equal(result.repository, null);
+  assert.equal(result.error.kind, "github-scope-missing");
+  assert.deepEqual(result.error.scopesRequired, ["repo", "read:user"]);
+  assert.deepEqual(result.error.scopesGranted, ["read:user"]);
+  assert.equal(fetchCalled, false);
+});
+
 test("reports GitHub repository name conflicts", async () => {
   const tokenStore = new MemorySecureTokenStore();
   await tokenStore.write({

@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-test("clone dialog passes the entered folder as the final clone target", () => {
+test("clone dialog passes the entered folder as the final clone target", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const cloneForm = new FakeForm("clone", {
     url: "https://github.com/owner/repo.git",
@@ -50,7 +50,7 @@ test("clone dialog passes the entered folder as the final clone target", () => {
   };
 
   vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
-  cloneForm.listeners.submit({
+  await cloneForm.listeners.submit({
     preventDefault() {},
     submitter: { value: "default" }
   });
@@ -59,7 +59,7 @@ test("clone dialog passes the entered folder as the final clone target", () => {
   assert.equal(cloneRequest.targetPath, "C:\\code\\custom-name");
 });
 
-test("github clone dialog starts clone with selected repository clone URL", () => {
+test("github clone dialog starts clone with selected repository clone URL", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const githubForm = new FakeForm("github", {
     name: "octo/source-companion",
@@ -112,7 +112,7 @@ test("github clone dialog starts clone with selected repository clone URL", () =
     })
   });
 
-  githubForm.listeners.submit({
+  await githubForm.listeners.submit({
     preventDefault() {},
     submitter: { value: "default" }
   });
@@ -121,7 +121,7 @@ test("github clone dialog starts clone with selected repository clone URL", () =
   assert.equal(cloneRequest.targetPath, "C:\\code\\source-companion");
 });
 
-test("publish dialog starts publish with local folder and repository options", () => {
+test("publish dialog prepares preflight without starting publish", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const publishForm = new FakeForm("publish", {
     path: "C:\\code\\project",
@@ -131,7 +131,8 @@ test("publish dialog starts publish with local folder and repository options", (
     initIfNeeded: "on"
   });
   const document = new FakeDocument([publishForm]);
-  let publishRequest = null;
+  let preflightRequest = null;
+  let publishStarted = false;
 
   const context = {
     document,
@@ -153,37 +154,42 @@ test("publish dialog starts publish with local folder and repository options", (
         })
       },
       SourceCompanionRepositoryPublishActions: {
-        runPublishAction: (request) => {
-          publishRequest = request;
+        preparePublishPreflight: (request) => {
+          preflightRequest = request;
           return {
-            ok: false,
-            action: "publish",
+            ok: true,
+            action: "publish-preflight",
+            request,
             command: null,
+            checks: [],
             stdout: "",
             stderr: "",
             exitCode: null,
-            message: "Stopped by test.",
-            error: {
-              kind: "test-stop",
-              message: "Stopped by test."
-            }
+            message: "Ready to publish.",
+            error: null
           };
+        },
+        runPublishAction: () => {
+          publishStarted = true;
+          throw new Error("publish runner should not start during preflight");
         }
       }
     }
   };
 
   vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
-  publishForm.listeners.submit({
+  await publishForm.listeners.submit({
     preventDefault() {},
     submitter: { value: "default" }
   });
 
-  assert.equal(publishRequest.repositoryPath, "C:\\code\\project");
-  assert.equal(publishRequest.name, "project");
-  assert.equal(publishRequest.description, "Focused source control");
-  assert.equal(publishRequest.visibility, "private");
-  assert.equal(publishRequest.initIfNeeded, true);
+  assert.equal(preflightRequest.repositoryPath, "C:\\code\\project");
+  assert.equal(preflightRequest.name, "project");
+  assert.equal(preflightRequest.description, "Focused source control");
+  assert.equal(preflightRequest.visibility, "private");
+  assert.equal(preflightRequest.initIfNeeded, true);
+  assert.equal(preflightRequest.publicConfirmed, false);
+  assert.equal(publishStarted, false);
 });
 
 class FakeStorage {
