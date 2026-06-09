@@ -233,6 +233,73 @@ test("publish dialog prepares preflight without starting publish", async () => {
   assert.equal(publishStarted, false);
 });
 
+test("desktop publish preflight uses bridge request without renderer GitHub client", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const publishForm = new FakeForm("publish", {
+    path: "C:\\code\\project",
+    name: "project",
+    description: "Focused source control",
+    visibility: "public",
+    initIfNeeded: "on"
+  });
+  const document = new FakeDocument([publishForm]);
+  let preflightRequest = null;
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionGitHubClientInstance: {
+        getAuthStatus: async () => ({
+          authenticated: true,
+          user: "octo",
+          token: "must-not-cross-renderer-request"
+        })
+      },
+      SourceCompanionDesktopBridge: {
+        preparePublishPreflight: (request) => {
+          preflightRequest = request;
+          return {
+            ok: true,
+            action: "publish-preflight",
+            request,
+            command: null,
+            checks: [],
+            stdout: "",
+            stderr: "",
+            exitCode: null,
+            message: "Ready to publish.",
+            error: null
+          };
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await publishForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  assert.equal(preflightRequest.repositoryPath, "C:\\code\\project");
+  assert.equal(preflightRequest.name, "project");
+  assert.equal(preflightRequest.description, "Focused source control");
+  assert.equal(preflightRequest.visibility, "public");
+  assert.equal(preflightRequest.initIfNeeded, true);
+  assert.equal(preflightRequest.publicConfirmed, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(preflightRequest, "githubClient"), false);
+});
+
 test("publish preflight output stays visible with remote overwrite warning", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const publishForm = new FakeForm("publish", {
@@ -305,6 +372,155 @@ test("publish preflight output stays visible with remote overwrite warning", asy
   assert.match(workspace, /Publish preflight/);
   assert.match(workspace, /remote-already-configured/);
   assert.match(workspace, /will not overwrite or replace remotes automatically/);
+});
+
+test("publish git output formats repository metadata and sanitizes auth URLs", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const publishForm = new FakeForm("publish", {
+    path: "C:\\code\\project",
+    name: "project",
+    description: "",
+    visibility: "public",
+    initIfNeeded: ""
+  });
+  const document = new FakeDocument([publishForm]);
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionGitHubClientInstance: {
+        getAuthStatus: async () => ({
+          authenticated: true,
+          user: "octo"
+        })
+      },
+      SourceCompanionRepositoryPublishActions: {
+        preparePublishPreflight: (request) => ({
+          ok: true,
+          action: "publish",
+          request,
+          repository: {
+            owner: "octo",
+            name: "project",
+            fullName: "octo/project",
+            visibility: "public",
+            htmlUrl: "https://token-value@github.com/octo/project"
+          },
+          command: {
+            display: "git remote add origin https://token-value@github.com/octo/project.git",
+            args: []
+          },
+          checks: [],
+          stdout: "created https://token-value@github.com/octo/project",
+          stderr: "",
+          exitCode: 0,
+          message: "project was published to GitHub.",
+          error: null
+        }),
+        runPublishAction: () => {
+          throw new Error("publish runner should not start during formatter test");
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await publishForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  const workspace = document.getElementById("workspaceContent").innerHTML;
+  assert.match(workspace, /Repository: octo\/project \/ public \/ https:\/\/github\.com\/octo\/project/);
+  assert.match(workspace, /git remote add origin https:\/\/github\.com\/octo\/project\.git/);
+  assert.match(workspace, /created https:\/\/github\.com\/octo\/project/);
+  assert.doesNotMatch(workspace, /\[object Object\]/);
+  assert.doesNotMatch(workspace, /token-value@/);
+});
+
+test("publish error output keeps technical details without auth-bearing remote URLs", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const publishForm = new FakeForm("publish", {
+    path: "C:\\code\\project",
+    name: "project",
+    description: "",
+    visibility: "private",
+    initIfNeeded: ""
+  });
+  const document = new FakeDocument([publishForm]);
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionGitHubClientInstance: {
+        getAuthStatus: async () => ({
+          authenticated: true,
+          user: "octo"
+        })
+      },
+      SourceCompanionRepositoryPublishActions: {
+        preparePublishPreflight: (request) => ({
+          ok: false,
+          action: "publish",
+          request,
+          repository: {
+            owner: "octo",
+            name: "project",
+            visibility: "private",
+            cloneUrl: "https://token-value@github.com/octo/project.git"
+          },
+          command: {
+            display: "git push --set-upstream origin main",
+            args: []
+          },
+          checks: [],
+          stdout: "",
+          stderr: "fatal: authentication failed for https://token-value@github.com/octo/project.git",
+          exitCode: 128,
+          message: "Git authentication or permission failed while publishing.",
+          error: {
+            kind: "git-auth-error",
+            message: "Authentication failed for https://token-value@github.com/octo/project.git"
+          }
+        }),
+        runPublishAction: () => {
+          throw new Error("publish runner should not start during formatter test");
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await publishForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  const workspace = document.getElementById("workspaceContent").innerHTML;
+  assert.match(workspace, /git-auth-error: Authentication failed for https:\/\/github\.com\/octo\/project\.git/);
+  assert.match(workspace, /fatal: authentication failed for https:\/\/github\.com\/octo\/project\.git/);
+  assert.match(workspace, /Repository: octo\/project \/ private \/ https:\/\/github\.com\/octo\/project\.git/);
+  assert.doesNotMatch(workspace, /token-value@/);
 });
 
 test("repository workspace renders collapsed history panel from repository state", async () => {
@@ -687,6 +903,130 @@ test("repository workspace creates pull request with visible base and head", asy
   assert.match(workspace, /GitHub PR create/);
 });
 
+test("floating window renders active repository and uses shared commit and sync runners", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const openForm = new FakeForm("open", {
+    path: "C:\\code\\project"
+  });
+  const workspaceElement = new FakeFloatingWorkspaceElement();
+  const document = new FakeDocument([openForm], {
+    workspaceContent: workspaceElement
+  });
+  let commitRequest = null;
+  let syncRequest = null;
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      SourceCompanionInitialMode: "floating",
+      confirm: () => true,
+      SourceCompanionRepositoryState: {
+        loadRepositoryState: async () => ({
+          kind: "git-repository",
+          health: "ready",
+          error: null,
+          operations: {
+            running: [],
+            queued: [],
+            completed: [],
+            lastCompleted: null
+          },
+          github: null,
+          git: {
+            branch: { name: "main", detached: false, headSha: "abc123456789" },
+            remote: { name: "origin", kind: "github" },
+            remotes: [],
+            upstream: { name: "origin/main" },
+            divergence: { ahead: 1, behind: 0 },
+            files: [],
+            staged: [{ path: "src/app.js", status: "M ", type: "modified" }],
+            unstaged: [{ path: "README.md", status: " M", type: "modified" }],
+            untracked: [{ path: "notes.txt", status: "??", type: "untracked" }],
+            conflicted: [],
+            stashes: [],
+            history: {
+              status: "ready",
+              message: "No commits loaded.",
+              commits: [],
+              head: null,
+              selectedCommit: null,
+              selectedDiff: "",
+              error: null
+            }
+          }
+        })
+      },
+      SourceCompanionRepositoryCommitActions: {
+        runCommitAction: async (request) => {
+          commitRequest = request;
+          return {
+            ok: true,
+            action: request.action,
+            command: { display: "git commit", args: [] },
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            message: "Commit completed.",
+            error: null
+          };
+        }
+      },
+      SourceCompanionRepositorySyncActions: {
+        runSyncAction: async (request) => {
+          syncRequest = request;
+          return {
+            ok: true,
+            action: request.action,
+            command: { display: "git push", args: [] },
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            message: "Push completed.",
+            error: null
+          };
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await openForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(workspaceElement.innerHTML, /floating-window/);
+  assert.match(workspaceElement.innerHTML, /main \/ origin\/main \/ 1 ahead, 0 behind/);
+  assert.match(workspaceElement.innerHTML, /Changed/);
+  assert.match(workspaceElement.innerHTML, /Commit and Push/);
+
+  workspaceElement.textarea.value = "Ship compact mode";
+  await workspaceElement.form.listeners.submit({ preventDefault() {} });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(commitRequest.repositoryPath, "C:\\code\\project");
+  assert.equal(commitRequest.action, "commit");
+  assert.equal(commitRequest.message, "Ship compact mode");
+
+  workspaceElement.textarea.value = "";
+  workspaceElement.pushButton.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(syncRequest.repositoryPath, "C:\\code\\project");
+  assert.equal(syncRequest.action, "push");
+  assert.equal(syncRequest.message, "");
+});
+
 function repositoryStateWithGitHub() {
   return {
     kind: "github-authenticated",
@@ -826,6 +1166,39 @@ class FakeToolbarWorkspaceElement extends FakeElement {
     if (!this.innerHTML.includes("source-control-toolbar")) return [];
     if (selector === "[data-source-control-action]") return this.actionButtons;
     if (selector === "[data-source-control-view]") return this.viewButtons;
+    return [];
+  }
+}
+
+class FakeFloatingWorkspaceElement extends FakeElement {
+  constructor() {
+    super();
+    this.textarea = new FakeElement();
+    this.form = new FakeElement();
+    this.form.querySelector = (selector) => selector === "[data-commit-message]" ? this.textarea : null;
+    this.commitAndPushButton = new FakeElement();
+    this.commitAndPushButton.dataset = { floatingCommitAction: "commit-and-push" };
+    this.pushButton = new FakeElement();
+    this.pushButton.dataset = { floatingSyncAction: "push" };
+    this.syncButton = new FakeElement();
+    this.syncButton.dataset = { floatingSyncAction: "sync" };
+    this.refreshButton = new FakeElement();
+    this.refreshButton.dataset = { floatingAction: "refresh" };
+    this.openFullButton = new FakeElement();
+    this.openFullButton.dataset = { floatingAction: "open-full-ui" };
+  }
+
+  querySelector(selector) {
+    if (selector === "[data-commit-message]") return this.textarea;
+    return super.querySelector(selector);
+  }
+
+  querySelectorAll(selector) {
+    if (!this.innerHTML.includes("floating-window")) return [];
+    if (selector === "[data-floating-commit-form]") return [this.form];
+    if (selector === "[data-floating-commit-action]") return [this.commitAndPushButton];
+    if (selector === "[data-floating-sync-action]") return [this.pushButton, this.syncButton];
+    if (selector === "[data-floating-action]") return [this.refreshButton, this.openFullButton];
     return [];
   }
 }

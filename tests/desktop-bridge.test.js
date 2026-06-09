@@ -27,6 +27,8 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
     "runHunkAction",
     "runCommitAction",
     "runCloneAction",
+    "preparePublishPreflight",
+    "runPublishAction",
     "runBranchAction",
     "runSyncAction",
     "runMergeAction",
@@ -43,7 +45,11 @@ test("desktop bridge exposes only whitelisted desktop repository and auth method
     "loginGitHub",
     "logoutGitHub",
     "listGitHubUserRepositories",
-    "searchGitHubUserRepositories"
+    "searchGitHubUserRepositories",
+    "listGitHubPullRequests",
+    "createGitHubPullRequest",
+    "loadGitHubPullRequestChecks",
+    "loadGitHubPullRequestReviewContext"
   ]);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runGitCommand"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runShellCommand"), false);
@@ -184,6 +190,178 @@ test("desktop bridge backend delegates clone through the operation queue", async
     priority: undefined,
     input: undefined
   });
+});
+
+test("desktop bridge backend loads GitHub pull request context without exposing tokens", async () => {
+  const calls = [];
+  const bridge = createDesktopBridgeBackend({
+    queue: createRecordingQueue(),
+    githubAuthBackend: require("../src/github-api-client").createGitHubAuthBridgeBackend({
+      githubClient: {
+        listPullRequests: async (options) => {
+          calls.push(["list", options]);
+          return {
+            ok: true,
+            pullRequests: [{
+              id: 10,
+              number: 4,
+              title: "Desktop PR bridge",
+              state: "open",
+              htmlUrl: "https://github.com/octo/source-companion/pull/4",
+              token: "must-not-leak",
+              head: { ref: "feature/pr", sha: "abc123" },
+              base: { ref: "main" }
+            }],
+            token: "must-not-leak"
+          };
+        },
+        createPullRequest: async (options) => {
+          calls.push(["create", options]);
+          return {
+            ok: true,
+            pullRequest: {
+              id: 11,
+              number: 5,
+              title: options.title,
+              state: "open",
+              htmlUrl: "https://github.com/octo/source-companion/pull/5",
+              token: "must-not-leak"
+            },
+            token: "must-not-leak"
+          };
+        },
+        loadPullRequestChecks: async (options) => {
+          calls.push(["checks", options]);
+          return {
+            ok: true,
+            state: "success",
+            summary: "Checks passing.",
+            statuses: [{
+              id: 20,
+              name: "legacy-ci",
+              state: "success",
+              targetUrl: "https://ci.example/status/20",
+              token: "must-not-leak"
+            }],
+            checks: [{
+              id: 21,
+              name: "build",
+              state: "success",
+              detailsUrl: "https://github.com/octo/source-companion/actions/runs/21",
+              token: "must-not-leak"
+            }],
+            token: "must-not-leak"
+          };
+        },
+        loadPullRequestReviewContext: async (options) => {
+          calls.push(["review", options]);
+          return {
+            ok: true,
+            summary: "1 review comment; 1 issue link.",
+            reviewComments: [{
+              id: 30,
+              path: "src/main.js",
+              body: "Handle desktop PR context.",
+              author: "reviewer",
+              htmlUrl: "https://github.com/octo/source-companion/pull/4#discussion_r30",
+              token: "must-not-leak"
+            }],
+            issueLinks: [{
+              number: 42,
+              title: "Improve desktop PR context",
+              state: "open",
+              htmlUrl: "https://github.com/octo/source-companion/issues/42",
+              token: "must-not-leak"
+            }],
+            token: "must-not-leak"
+          };
+        }
+      }
+    })
+  });
+
+  const listed = await bridge.listGitHubPullRequests({ owner: "octo", repo: "source-companion", branch: "feature/pr" });
+  const created = await bridge.createGitHubPullRequest({ owner: "octo", repo: "source-companion", base: "main", head: "feature/pr", title: "Created PR" });
+  const checks = await bridge.loadGitHubPullRequestChecks({ owner: "octo", repo: "source-companion", ref: "abc123" });
+  const reviewContext = await bridge.loadGitHubPullRequestReviewContext({ owner: "octo", repo: "source-companion", pullNumber: 4, branch: "feature/issue-42" });
+
+  assert.equal(listed.ok, true);
+  assert.equal(listed.token, undefined);
+  assert.equal(listed.pullRequests[0].token, undefined);
+  assert.equal(created.ok, true);
+  assert.equal(created.pullRequest.token, undefined);
+  assert.equal(checks.ok, true);
+  assert.equal(checks.token, undefined);
+  assert.equal(checks.statuses[0].token, undefined);
+  assert.equal(checks.checks[0].token, undefined);
+  assert.equal(reviewContext.ok, true);
+  assert.equal(reviewContext.reviewComments[0].token, undefined);
+  assert.equal(reviewContext.issueLinks[0].token, undefined);
+  assert.deepEqual(calls.map((call) => call[0]), ["list", "create", "checks", "review"]);
+});
+
+test("desktop bridge backend publishes through backend-only GitHub client and operation queue", async () => {
+  const queue = createPublishingQueue();
+  const githubCalls = [];
+  const bridge = createDesktopBridgeBackend({
+    queue,
+    githubAuthBackend: {
+      getAuthStatus: async () => ({
+        authenticated: true,
+        user: "octo",
+        token: "must-not-leak"
+      }),
+      createRepository: async (options) => {
+        githubCalls.push(options);
+        return {
+          ok: true,
+          repository: {
+            owner: "octo",
+            name: options.name,
+            fullName: `octo/${options.name}`,
+            cloneUrl: "https://github.com/octo/published.git",
+            token: "must-not-leak"
+          },
+          token: "must-not-leak",
+          error: null
+        };
+      }
+    }
+  });
+
+  const preflight = await bridge.preparePublishPreflight({
+    repositoryPath: "C:\\repo",
+    name: "published",
+    description: "Desktop publish",
+    visibility: "public",
+    publicConfirmed: true
+  });
+  const result = await bridge.runPublishAction({
+    repositoryPath: "C:\\repo",
+    name: "published",
+    description: "Desktop publish",
+    visibility: "public"
+  });
+
+  assert.equal(preflight.ok, true);
+  assert.equal(result.ok, true);
+  assert.deepEqual(githubCalls, [{
+    name: "published",
+    description: "Desktop publish",
+    private: false
+  }]);
+  assert.equal(result.repository.fullName, "octo/published");
+  assert.equal(result.repository.token, undefined);
+  assert.equal(result.token, undefined);
+  assert.deepEqual(queue.requests.map((request) => request.action), [
+    "status",
+    "remote",
+    "status",
+    "remote",
+    "remote",
+    "push"
+  ]);
+  assert.equal(queue.requests[4].options.url, "https://github.com/octo/published.git");
 });
 
 test("desktop bridge backend delegates merge through the operation queue", async () => {
@@ -501,6 +679,47 @@ function createRecordingQueue() {
       };
     }
   };
+}
+
+function createPublishingQueue() {
+  return {
+    requests: [],
+    enqueue(request) {
+      this.requests.push(request);
+      return {
+        promise: Promise.resolve(publishingGitResult(request))
+      };
+    },
+    getRepositoryState(repositoryId) {
+      return {
+        repositoryId,
+        running: [],
+        queued: [],
+        completed: [],
+        lastCompleted: null
+      };
+    }
+  };
+}
+
+function publishingGitResult(request) {
+  const base = {
+    ok: true,
+    action: request.action,
+    args: [request.action],
+    stdout: "",
+    stderr: "",
+    exitCode: 0,
+    error: null,
+    options: request.options || {}
+  };
+  if (request.action === "status") {
+    return {
+      ...base,
+      stdout: "## main\n"
+    };
+  }
+  return base;
 }
 
 function createRecordingTokenStore() {

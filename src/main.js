@@ -5,6 +5,7 @@
 
   const state = {
     desktopBridge,
+    uiMode: resolveInitialUiMode(),
     recent: loadRecent(),
     tabs: [],
     activeTabId: null,
@@ -51,6 +52,8 @@
   const githubRepoSearch = document.getElementById("githubRepoSearch");
   const githubRepositoryName = document.getElementById("githubRepositoryName");
   const githubSelectedUrl = document.getElementById("githubSelectedUrl");
+  const appShell = typeof document.querySelector === "function" ? document.querySelector(".app-shell") : null;
+  const floatingModeButton = document.getElementById("floatingModeButton");
 
   document.querySelectorAll("[data-open-dialog]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -88,6 +91,12 @@
     setMessage("success", "Recent repositories cleared.");
     render();
   });
+
+  if (floatingModeButton) {
+    floatingModeButton.addEventListener("click", () => {
+      setUiMode(state.uiMode === "floating" ? "full" : "floating");
+    });
+  }
 
   if (dialogs.github) {
     dialogs.github.addEventListener("click", (event) => {
@@ -451,6 +460,8 @@
   }
 
   function render() {
+    applyUiModeToShell();
+    renderFloatingModeButton();
     renderRecent();
     renderTabs();
     renderMessage();
@@ -526,8 +537,32 @@
     messageHost.innerHTML = `<div class="message ${state.message.kind}">${escapeHtml(state.message.text)}</div>`;
   }
 
+  function setUiMode(mode) {
+    state.uiMode = mode === "floating" ? "floating" : "full";
+    render();
+  }
+
+  function applyUiModeToShell() {
+    if (appShell && appShell.classList && typeof appShell.classList.toggle === "function") {
+      appShell.classList.toggle("floating-mode", state.uiMode === "floating");
+    }
+  }
+
+  function renderFloatingModeButton() {
+    if (!floatingModeButton) return;
+    floatingModeButton.textContent = state.uiMode === "floating" ? "Full UI" : "Floating Window";
+    if (typeof floatingModeButton.setAttribute === "function") {
+      floatingModeButton.setAttribute("aria-pressed", state.uiMode === "floating" ? "true" : "false");
+    }
+  }
+
   function renderWorkspace() {
     const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+
+    if (state.uiMode === "floating") {
+      renderFloatingWorkspace(active);
+      return;
+    }
 
     if (!active) {
       workspaceContent.innerHTML = `
@@ -710,6 +745,115 @@
         runPullRequestAction(active.id, button.dataset.prAction, null);
       });
     });
+  }
+
+  function renderFloatingWorkspace(active) {
+    workspaceContent.innerHTML = active ? renderFloatingWindow(active) : renderFloatingEmpty();
+
+    workspaceContent.querySelectorAll("[data-floating-commit-form]").forEach((form) => {
+      const textarea = form.querySelector("[data-commit-message]");
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (textarea) {
+          const tab = state.tabs.find((item) => item.id === state.activeTabId);
+          if (tab) tab.commitMessage = textarea.value;
+        }
+        if (active) runRepositoryCommitAction(active.id, "commit");
+      });
+      if (textarea) {
+        textarea.addEventListener("input", () => {
+          const tab = state.tabs.find((item) => item.id === state.activeTabId);
+          if (!tab) return;
+          tab.commitMessage = textarea.value;
+        });
+      }
+    });
+
+    workspaceContent.querySelectorAll("[data-floating-commit-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (active) runRepositoryCommitAction(active.id, button.dataset.floatingCommitAction);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-floating-sync-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (active) runRepositorySyncAction(active.id, button.dataset.floatingSyncAction);
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-floating-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.floatingAction === "open-full-ui") {
+          setUiMode("full");
+        }
+        if (button.dataset.floatingAction === "refresh" && active) {
+          runSourceControlToolbarAction(active.id, "refresh");
+        }
+      });
+    });
+  }
+
+  function renderFloatingEmpty() {
+    return `
+      <article class="floating-window empty" aria-label="Floating source control">
+        <div class="floating-header">
+          <div>
+            <h2>No repository open</h2>
+            <p>Open the Full UI to choose a repository.</p>
+          </div>
+        </div>
+        <div class="floating-actions">
+          <button class="button primary" type="button" data-floating-action="open-full-ui">Open Full UI</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderFloatingWindow(repo) {
+    const commitValidation = validateFloatingCommitAction(repo, "commit");
+    const commitAndPushValidation = validateFloatingSyncAction(repo, "commit-and-push");
+    const pushValidation = validateFloatingSyncAction(repo, "push");
+    const syncValidation = validateFloatingSyncAction(repo, "sync");
+    const refreshRunning = repo.lastRefresh && repo.lastRefresh.status === "running";
+    const writeBusy = isRepositoryWriteBusy(repo);
+    const status = floatingStatus(repo);
+
+    return `
+      <article class="floating-window" aria-label="Floating source control">
+        <div class="floating-header">
+          <div>
+            <h2>${escapeHtml(repo.displayName)}</h2>
+            <p title="${escapeHtml(repo.path)}">${escapeHtml(branchLabel(repo.git.branch))} / ${escapeHtml(upstreamLabel(repo.git.upstream))} / ${escapeHtml(divergenceLabel(repo.git.divergence))}</p>
+          </div>
+          <span class="status-pill ${escapeHtml(floatingSyncStateClass(repo))}">${escapeHtml(floatingSyncStateLabel(repo))}</span>
+        </div>
+        <div class="floating-counts" aria-label="Change counts">
+          ${floatingChangeCountItems(repo.git).map((item) => `
+            <div>
+              <strong>${escapeHtml(item.count)}</strong>
+              <span>${escapeHtml(item.label)}</span>
+            </div>
+          `).join("")}
+        </div>
+        <form class="floating-commit" data-floating-commit-form>
+          <label class="commit-message-label">
+            <span>Commit Message</span>
+            <textarea data-commit-message rows="3" autocomplete="off" placeholder="Describe staged changes">${escapeHtml(repo.commitMessage || "")}</textarea>
+          </label>
+          <div class="floating-actions">
+            <button class="button primary" type="submit" ${commitValidation.ok && !writeBusy ? "" : "disabled"} title="${escapeHtml(commitValidation.message)}">Commit</button>
+            <button class="button" type="button" data-floating-commit-action="commit-and-push" ${commitAndPushValidation.ok && !writeBusy ? "" : "disabled"} title="${escapeHtml(commitAndPushValidation.message)}">Commit and Push</button>
+            <button class="button" type="button" data-floating-sync-action="push" ${pushValidation.ok && !writeBusy ? "" : "disabled"} title="${escapeHtml(pushValidation.message)}">Push</button>
+            <button class="button" type="button" data-floating-sync-action="sync" ${syncValidation.ok && !writeBusy ? "" : "disabled"} title="${escapeHtml(syncValidation.message)}">Pull/Sync</button>
+          </div>
+        </form>
+        <div class="floating-status ${escapeHtml(status.kind)}" tabindex="0">${escapeHtml(status.message)}</div>
+        <div class="floating-actions secondary">
+          <button class="button compact" type="button" data-floating-action="refresh" ${refreshRunning ? "disabled" : ""}>Refresh</button>
+          <button class="button compact" type="button" data-floating-action="open-full-ui">Open Full UI</button>
+        </div>
+      </article>
+    `;
   }
 
   function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
@@ -2439,13 +2583,13 @@
     return {
       ok: Boolean(result.ok),
       action: result.action || command.action || "git",
-      command: gitOutputCommandLabel(result, command, args),
-      stdout: result.stdout || "",
-      stderr: result.stderr || "",
+      command: sanitizeGitOutputText(gitOutputCommandLabel(result, command, args)),
+      stdout: sanitizeGitOutputText(result.stdout || ""),
+      stderr: sanitizeGitOutputText(result.stderr || ""),
       exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
-      message: result.message || "",
+      message: sanitizeGitOutputText(result.message || ""),
       error: result.error || null,
-      details: gitOutputDetails(result),
+      details: gitOutputDetails(result).map(sanitizeGitOutputText),
       completedAt: new Date().toISOString()
     };
   }
@@ -2469,7 +2613,7 @@
         details.push(`${check.ok ? "OK" : "Blocked"}: ${check.label || "Check"} - ${check.message || ""}`);
       });
     }
-    if (result.repository) details.push(`Repository: ${result.repository}`);
+    if (result.repository) details.push(`Repository: ${formatRepositoryDetail(result.repository)}`);
     if (result.branch) details.push(`Branch: ${result.branch}`);
     if (result.base || result.head) details.push(`PR target: ${result.head || "head"} -> ${result.base || "base"}`);
     if (result.pullRequest && result.pullRequest.htmlUrl) details.push(`Pull request: ${result.pullRequest.htmlUrl}`);
@@ -2494,6 +2638,28 @@
       });
     }
     return details;
+  }
+
+  function formatRepositoryDetail(repository) {
+    if (!repository || typeof repository !== "object") {
+      return sanitizeRepositoryUrl(repository);
+    }
+
+    const owner = clean(repository.owner);
+    const name = clean(repository.name);
+    const fullName = clean(repository.fullName || repository.full_name) || (owner && name ? `${owner}/${name}` : name || owner);
+    const visibility = clean(repository.visibility) || (repository.private === true ? "private" : repository.private === false ? "public" : "");
+    const url = sanitizeRepositoryUrl(repository.htmlUrl || repository.html_url || repository.cloneUrl || repository.clone_url || repository.sshUrl || repository.ssh_url);
+    return [fullName || "GitHub repository", visibility, url].filter(Boolean).join(" / ");
+  }
+
+  function sanitizeRepositoryUrl(value) {
+    const url = clean(value);
+    return sanitizeGitOutputText(url);
+  }
+
+  function sanitizeGitOutputText(value) {
+    return clean(value).replace(/(https?:\/\/)[^@\s/]+@/gi, "$1");
   }
 
   function confirmDiscard(selected) {
@@ -2961,6 +3127,10 @@
   }
 
   function resolveRepositoryPublishActionRunner() {
+    if (desktopBridge && typeof desktopBridge.runPublishAction === "function") {
+      return (request = {}) => desktopBridge.runPublishAction(toDesktopPublishRequest(request));
+    }
+
     if (window.SourceCompanionRepositoryPublishActions && typeof window.SourceCompanionRepositoryPublishActions.runPublishAction === "function") {
       return window.SourceCompanionRepositoryPublishActions.runPublishAction;
     }
@@ -2985,6 +3155,10 @@
   }
 
   function resolveRepositoryPublishPreflightRunner() {
+    if (desktopBridge && typeof desktopBridge.preparePublishPreflight === "function") {
+      return (request = {}) => desktopBridge.preparePublishPreflight(toDesktopPublishRequest(request));
+    }
+
     if (window.SourceCompanionRepositoryPublishActions &&
       typeof window.SourceCompanionRepositoryPublishActions.preparePublishPreflight === "function") {
       return window.SourceCompanionRepositoryPublishActions.preparePublishPreflight;
@@ -3007,6 +3181,17 @@
     }
 
     return null;
+  }
+
+  function toDesktopPublishRequest(request = {}) {
+    return {
+      repositoryPath: request.repositoryPath,
+      name: request.name,
+      description: request.description,
+      visibility: request.visibility,
+      initIfNeeded: request.initIfNeeded,
+      publicConfirmed: request.publicConfirmed
+    };
   }
 
   function resolveGitHubClient() {
@@ -3072,6 +3257,18 @@
       if (typeof desktopBridge.searchGitHubUserRepositories === "function") {
         bridge.searchUserRepositories = (options) => desktopBridge.searchGitHubUserRepositories(options || {});
       }
+      if (typeof desktopBridge.listGitHubPullRequests === "function") {
+        bridge.listPullRequests = (options) => desktopBridge.listGitHubPullRequests(options || {});
+      }
+      if (typeof desktopBridge.createGitHubPullRequest === "function") {
+        bridge.createPullRequest = (options) => desktopBridge.createGitHubPullRequest(options || {});
+      }
+      if (typeof desktopBridge.loadGitHubPullRequestChecks === "function") {
+        bridge.loadPullRequestChecks = (options) => desktopBridge.loadGitHubPullRequestChecks(options || {});
+      }
+      if (typeof desktopBridge.loadGitHubPullRequestReviewContext === "function") {
+        bridge.loadPullRequestReviewContext = (options) => desktopBridge.loadGitHubPullRequestReviewContext(options || {});
+      }
       return bridge;
     }
 
@@ -3090,7 +3287,9 @@
       searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {}),
       createRepository: (options) => tauriInvoke("github_create_repository", options || {}),
       listPullRequests: (options) => tauriInvoke("github_list_pull_requests", options || {}),
-      createPullRequest: (options) => tauriInvoke("github_create_pull_request", options || {})
+      createPullRequest: (options) => tauriInvoke("github_create_pull_request", options || {}),
+      loadPullRequestChecks: (options) => tauriInvoke("github_load_pull_request_checks", options || {}),
+      loadPullRequestReviewContext: (options) => tauriInvoke("github_load_pull_request_review_context", options || {})
     };
   }
 
@@ -3215,6 +3414,131 @@
     }
 
     return "Idle";
+  }
+
+  function floatingChangeCountItems(git) {
+    return [
+      { label: "Changed", count: countFiles(git.unstaged) },
+      { label: "Staged", count: countFiles(git.staged) },
+      { label: "Untracked", count: countFiles(git.untracked) },
+      { label: "Conflicts", count: countFiles(git.conflicted) }
+    ];
+  }
+
+  function floatingSyncStateLabel(repo) {
+    if (repo.health === "operation-running" || isRepositoryWriteBusy(repo)) return "running";
+    if (repo.health === "conflict" || countFiles(repo.git.conflicted) > 0) return "conflict";
+    const divergence = repo.git.divergence || {};
+    const ahead = Number(divergence.ahead) || 0;
+    const behind = Number(divergence.behind) || 0;
+    const changes = countFiles(repo.git.staged) + countFiles(repo.git.unstaged) + countFiles(repo.git.untracked);
+    if (ahead > 0 && behind > 0) return "diverged";
+    if (ahead > 0) return "ahead";
+    if (behind > 0) return "behind";
+    if (changes > 0) return "local changes";
+    if (repo.health === "error") return "error";
+    return "clean";
+  }
+
+  function floatingSyncStateClass(repo) {
+    const label = floatingSyncStateLabel(repo);
+    if (label === "clean") return "ready";
+    if (label === "conflict" || label === "error" || label === "diverged") return "error";
+    return "warning";
+  }
+
+  function floatingStatus(repo) {
+    const running = [
+      repo.commitAction,
+      repo.syncAction,
+      repo.branchAction,
+      repo.mergeAction,
+      repo.stashAction,
+      repo.fileAction,
+      repo.cloneAction,
+      repo.publishAction
+    ].find((action) => action && action.status === "running");
+    if (running) {
+      return { kind: "running", message: running.message || "Running Git operation." };
+    }
+    if (repo.lastRefresh && repo.lastRefresh.status === "running") {
+      return { kind: "running", message: "Refreshing repository status." };
+    }
+    if (repo.error) {
+      return { kind: "error", message: repo.error.message || "Repository error." };
+    }
+
+    const failed = [
+      repo.commitAction,
+      repo.syncAction,
+      repo.branchAction,
+      repo.mergeAction,
+      repo.stashAction,
+      repo.fileAction,
+      repo.cloneAction,
+      repo.publishAction
+    ].find((action) => action && action.status === "failed");
+    if (failed) {
+      return { kind: "error", message: failed.message || "Git action failed. Open Full UI for details." };
+    }
+
+    const succeeded = [
+      repo.commitAction,
+      repo.syncAction,
+      repo.branchAction,
+      repo.mergeAction,
+      repo.stashAction,
+      repo.fileAction,
+      repo.cloneAction,
+      repo.publishAction
+    ].find((action) => action && action.status === "succeeded");
+    if (succeeded) {
+      return { kind: "success", message: succeeded.message || "Last Git action completed." };
+    }
+
+    const commitValidation = validateFloatingCommitAction(repo, "commit");
+    return {
+      kind: commitValidation.ok ? "idle" : "blocked",
+      message: commitValidation.ok ? "Ready." : commitValidation.message
+    };
+  }
+
+  function isRepositoryWriteBusy(repo) {
+    if (!repo) return false;
+    const actions = [
+      repo.commitAction,
+      repo.syncAction,
+      repo.branchAction,
+      repo.mergeAction,
+      repo.stashAction,
+      repo.fileAction,
+      repo.cloneAction,
+      repo.publishAction
+    ];
+    return actions.some((action) => action && action.status === "running") ||
+      Boolean(repo.operations && Array.isArray(repo.operations.running) && repo.operations.running.length > 0);
+  }
+
+  function validateFloatingCommitAction(repo, action) {
+    const validation = validateCommitAction(repo, action);
+    if (validation.ok) return validation;
+    return { ok: false, message: floatingValidationMessage(validation.message) };
+  }
+
+  function validateFloatingSyncAction(repo, action) {
+    const validation = validateSyncAction(repo, action);
+    if (validation.ok) return validation;
+    return { ok: false, message: floatingValidationMessage(validation.message) };
+  }
+
+  function floatingValidationMessage(message) {
+    const text = clean(message);
+    if (/commit message/i.test(text)) return "Enter a commit message.";
+    if (/stage/i.test(text) || /staged/i.test(text)) return "Stage changes before committing.";
+    if (/upstream/i.test(text)) return "Set an upstream branch in the Full UI.";
+    if (/conflict/i.test(text)) return "Resolve conflicts in the Full UI.";
+    if (/path|folder/i.test(text)) return "Repository path is no longer available.";
+    return text || "Open Full UI for details.";
   }
 
   function renderSourceControl(repo) {
@@ -4723,6 +5047,13 @@
 
   function samePath(first, second) {
     return clean(first).toLowerCase() === clean(second).toLowerCase();
+  }
+
+  function resolveInitialUiMode() {
+    if (typeof window !== "undefined" && window.SourceCompanionInitialMode === "floating") {
+      return "floating";
+    }
+    return "full";
   }
 
   function clean(value) {

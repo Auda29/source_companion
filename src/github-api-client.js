@@ -1148,6 +1148,26 @@ class GitHubAuthBridgeBackend {
   async searchUserRepositories(options = {}) {
     return normalizeRepositoryResult(await this.client.searchUserRepositories(options));
   }
+
+  async createRepository(options = {}) {
+    return normalizeSingleRepositoryResult(await this.client.createRepository(options));
+  }
+
+  async listPullRequests(options = {}) {
+    return normalizePullRequestResult(await this.client.listPullRequests(options));
+  }
+
+  async createPullRequest(options = {}) {
+    return normalizeSinglePullRequestResult(await this.client.createPullRequest(options));
+  }
+
+  async loadPullRequestChecks(options = {}) {
+    return normalizePullRequestCheckResult(await this.client.loadPullRequestChecks(options));
+  }
+
+  async loadPullRequestReviewContext(options = {}) {
+    return normalizePullRequestReviewContextResult(await this.client.loadPullRequestReviewContext(options));
+  }
 }
 
 function createGitHubApiClient(options) {

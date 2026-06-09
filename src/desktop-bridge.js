@@ -11,6 +11,8 @@ const DESKTOP_BRIDGE_COMMANDS = Object.freeze({
   runHunkAction: "repository_run_hunk_action",
   runCommitAction: "repository_run_commit_action",
   runCloneAction: "repository_run_clone_action",
+  preparePublishPreflight: "repository_prepare_publish_preflight",
+  runPublishAction: "repository_run_publish_action",
   runBranchAction: "repository_run_branch_action",
   runSyncAction: "repository_run_sync_action",
   runMergeAction: "repository_run_merge_action",
@@ -27,7 +29,11 @@ const DESKTOP_BRIDGE_COMMANDS = Object.freeze({
   loginGitHub: "github_login",
   logoutGitHub: "github_logout",
   listGitHubUserRepositories: "github_list_user_repositories",
-  searchGitHubUserRepositories: "github_search_user_repositories"
+  searchGitHubUserRepositories: "github_search_user_repositories",
+  listGitHubPullRequests: "github_list_pull_requests",
+  createGitHubPullRequest: "github_create_pull_request",
+  loadGitHubPullRequestChecks: "github_load_pull_request_checks",
+  loadGitHubPullRequestReviewContext: "github_load_pull_request_review_context"
 });
 
 const DESKTOP_BRIDGE_METHODS = Object.freeze(Object.keys(DESKTOP_BRIDGE_COMMANDS));
@@ -81,6 +87,8 @@ function createDesktopBridgeBackend({
   runHunkAction,
   runCommitAction,
   runCloneAction,
+  preparePublishPreflight,
+  runPublishAction,
   runBranchAction,
   runSyncAction,
   runMergeAction,
@@ -97,6 +105,8 @@ function createDesktopBridgeBackend({
     runHunkAction,
     runCommitAction,
     runCloneAction,
+    preparePublishPreflight,
+    runPublishAction,
     runBranchAction,
     runSyncAction,
     runMergeAction,
@@ -107,6 +117,7 @@ function createDesktopBridgeBackend({
   });
   const operationQueue = modules.queue;
   const execute = createQueuedExecutor(operationQueue);
+  const publishGitHubClient = createPublishGitHubClient(modules.githubAuthBackend);
   const watchRegistry = new Map();
 
   return Object.freeze({
@@ -120,6 +131,14 @@ function createDesktopBridgeBackend({
     runHunkAction: async (request = {}) => modules.runHunkAction(withExecute(request, execute)),
     runCommitAction: async (request = {}) => modules.runCommitAction(withExecute(request, execute)),
     runCloneAction: async (request = {}) => modules.runCloneAction(withExecute(request, execute)),
+    preparePublishPreflight: async (request = {}) => modules.preparePublishPreflight({
+      ...withExecute(request, execute),
+      githubClient: publishGitHubClient
+    }),
+    runPublishAction: async (request = {}) => modules.runPublishAction({
+      ...withExecute(request, execute),
+      githubClient: publishGitHubClient
+    }),
     runBranchAction: async (request = {}) => modules.runBranchAction(withExecute(request, execute)),
     runSyncAction: async (request = {}) => modules.runSyncAction(withExecute(request, execute)),
     runMergeAction: async (request = {}) => modules.runMergeAction(withExecute(request, execute)),
@@ -216,8 +235,50 @@ function createDesktopBridgeBackend({
     loginGitHub: async (request = {}) => modules.githubAuthBackend.login(normalizeRequest(request)),
     logoutGitHub: async (request = {}) => modules.githubAuthBackend.logout(normalizeRequest(request)),
     listGitHubUserRepositories: async (request = {}) => modules.githubAuthBackend.listUserRepositories(normalizeRequest(request)),
-    searchGitHubUserRepositories: async (request = {}) => modules.githubAuthBackend.searchUserRepositories(normalizeRequest(request))
+    searchGitHubUserRepositories: async (request = {}) => modules.githubAuthBackend.searchUserRepositories(normalizeRequest(request)),
+    listGitHubPullRequests: async (request = {}) => stripSensitiveFields(await modules.githubAuthBackend.listPullRequests(normalizeRequest(request))),
+    createGitHubPullRequest: async (request = {}) => stripSensitiveFields(await modules.githubAuthBackend.createPullRequest(normalizeRequest(request))),
+    loadGitHubPullRequestChecks: async (request = {}) => stripSensitiveFields(await modules.githubAuthBackend.loadPullRequestChecks(normalizeRequest(request))),
+    loadGitHubPullRequestReviewContext: async (request = {}) => stripSensitiveFields(await modules.githubAuthBackend.loadPullRequestReviewContext(normalizeRequest(request)))
   });
+}
+
+function createPublishGitHubClient(githubAuthBackend) {
+  return {
+    getAuthStatus: async () => stripSensitiveFields(await githubAuthBackend.getAuthStatus()),
+    createRepository: async (request = {}) => {
+      const result = await githubAuthBackend.createRepository(normalizeRequest(request));
+      return {
+        ok: Boolean(result && result.ok),
+        repository: result && result.repository ? normalizePublishRepository(result.repository) : null,
+        error: result && result.error ? stripSensitiveFields(result.error) : null
+      };
+    }
+  };
+}
+
+function normalizePublishRepository(repository) {
+  return {
+    id: repository.id,
+    owner: clean(repository.owner),
+    name: clean(repository.name),
+    fullName: clean(repository.fullName || repository.full_name),
+    description: clean(repository.description),
+    private: Boolean(repository.private),
+    visibility: clean(repository.visibility) || (repository.private ? "private" : "public"),
+    stars: Number.isFinite(repository.stars) ? repository.stars : 0,
+    cloneUrl: clean(repository.cloneUrl || repository.clone_url),
+    sshUrl: clean(repository.sshUrl || repository.ssh_url),
+    htmlUrl: clean(repository.htmlUrl || repository.html_url)
+  };
+}
+
+function stripSensitiveFields(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(stripSensitiveFields);
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !/token|authorization|secret|deviceCode/i.test(key))
+    .map(([key, item]) => [key, stripSensitiveFields(item)]));
 }
 
 function createQueuedExecutor(queue) {
@@ -270,6 +331,8 @@ function loadBackendModules(overrides) {
     runHunkAction: overrides.runHunkAction || require("./repository-hunk-actions").runHunkAction,
     runCommitAction: overrides.runCommitAction || require("./repository-commit-actions").runCommitAction,
     runCloneAction: overrides.runCloneAction || require("./repository-clone-actions").runCloneAction,
+    preparePublishPreflight: overrides.preparePublishPreflight || require("./repository-publish-actions").preparePublishPreflight,
+    runPublishAction: overrides.runPublishAction || require("./repository-publish-actions").runPublishAction,
     runBranchAction: overrides.runBranchAction || require("./repository-branch-actions").runBranchAction,
     runSyncAction: overrides.runSyncAction || require("./repository-sync-actions").runSyncAction,
     runMergeAction: overrides.runMergeAction || require("./repository-merge-actions").runMergeAction,

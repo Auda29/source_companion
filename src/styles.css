@@ -96,6 +96,38 @@ textarea {
   gap: 8px;
 }
 
+.app-shell.floating-mode {
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+.app-shell.floating-mode .topbar {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.app-shell.floating-mode .brand,
+.app-shell.floating-mode .project-picker,
+.app-shell.floating-mode .tabs,
+.app-shell.floating-mode .message-host,
+.app-shell.floating-mode .top-actions [data-open-dialog] {
+  display: none;
+}
+
+.app-shell.floating-mode .layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.floating-mode .workspace {
+  grid-template-rows: 1fr;
+}
+
+.app-shell.floating-mode .workspace-content {
+  display: grid;
+  place-items: start stretch;
+  padding: 10px;
+}
+
 .button,
 .icon-button {
   border: 1px solid var(--border);
@@ -1341,6 +1373,123 @@ textarea {
 .commit-status.running {
   background: var(--warning-bg);
   color: var(--warning);
+}
+
+.floating-window {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgb(31 41 51 / 0.08);
+}
+
+.floating-window.empty {
+  align-self: start;
+}
+
+.floating-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.floating-header h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-header p {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.floating-counts div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 6px;
+  background: var(--surface-alt);
+  text-align: center;
+}
+
+.floating-counts strong,
+.floating-counts span {
+  display: block;
+  min-width: 0;
+}
+
+.floating-counts strong {
+  font-size: 18px;
+}
+
+.floating-counts span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-commit {
+  display: grid;
+  gap: 9px;
+}
+
+.floating-commit .commit-message-label textarea {
+  min-height: 64px;
+}
+
+.floating-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.floating-actions.secondary {
+  justify-content: space-between;
+}
+
+.floating-status {
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.floating-status.running,
+.floating-status.blocked {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.floating-status.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.floating-status.success {
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .change-lists {

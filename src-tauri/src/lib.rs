@@ -349,6 +349,22 @@ fn repository_run_clone_action(
 }
 
 #[tauri::command]
+fn repository_prepare_publish_preflight(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("preparePublishPreflight", request)
+}
+
+#[tauri::command]
+fn repository_run_publish_action(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("runPublishAction", request)
+}
+
+#[tauri::command]
 fn repository_run_branch_action(
     state: tauri::State<'_, DesktopBridgeState>,
     request: Option<Value>,
@@ -484,6 +500,38 @@ fn github_search_user_repositories(
     state.invoke("searchGitHubUserRepositories", request)
 }
 
+#[tauri::command]
+fn github_list_pull_requests(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("listGitHubPullRequests", request)
+}
+
+#[tauri::command]
+fn github_create_pull_request(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("createGitHubPullRequest", request)
+}
+
+#[tauri::command]
+fn github_load_pull_request_checks(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("loadGitHubPullRequestChecks", request)
+}
+
+#[tauri::command]
+fn github_load_pull_request_review_context(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("loadGitHubPullRequestReviewContext", request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let desktop_bridge_state =
@@ -503,6 +551,8 @@ pub fn run() {
             repository_run_hunk_action,
             repository_run_commit_action,
             repository_run_clone_action,
+            repository_prepare_publish_preflight,
+            repository_run_publish_action,
             repository_run_branch_action,
             repository_run_sync_action,
             repository_run_merge_action,
@@ -519,7 +569,11 @@ pub fn run() {
             github_login,
             github_logout,
             github_list_user_repositories,
-            github_search_user_repositories
+            github_search_user_repositories,
+            github_list_pull_requests,
+            github_create_pull_request,
+            github_load_pull_request_checks,
+            github_load_pull_request_review_context
         ])
         .run(tauri::generate_context!())
         .expect("error while running Source Companion");
