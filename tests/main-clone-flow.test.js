@@ -59,6 +59,68 @@ test("clone dialog passes the entered folder as the final clone target", () => {
   assert.equal(cloneRequest.targetPath, "C:\\code\\custom-name");
 });
 
+test("github clone dialog starts clone with selected repository clone URL", () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const githubForm = new FakeForm("github", {
+    name: "octo/source-companion",
+    target: "C:\\code\\source-companion"
+  });
+  const document = new FakeDocument([githubForm]);
+  let cloneRequest = null;
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionRepositoryCloneActions: {
+        runCloneAction: (request) => {
+          cloneRequest = request;
+          return {
+            ok: false,
+            action: "clone",
+            command: null,
+            stdout: "",
+            stderr: "",
+            exitCode: null,
+            message: "Stopped by test.",
+            error: {
+              kind: "test-stop",
+              message: "Stopped by test."
+            }
+          };
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+
+  const githubDialog = document.getElementById("githubDialog");
+  githubDialog.listeners.click({
+    target: new FakeDatasetTarget({
+      githubRepoName: "octo/source-companion",
+      githubRepoCloneUrl: "https://github.com/octo/source-companion.git"
+    })
+  });
+
+  githubForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  assert.equal(cloneRequest.url, "https://github.com/octo/source-companion.git");
+  assert.equal(cloneRequest.targetPath, "C:\\code\\source-companion");
+});
+
 class FakeStorage {
   constructor() {
     this.values = new Map();
@@ -116,6 +178,17 @@ class FakeElement {
 
   get innerHTML() {
     return this._innerHTML;
+  }
+}
+
+class FakeDatasetTarget {
+  constructor(dataset) {
+    this.dataset = dataset;
+  }
+
+  closest(selector) {
+    if (selector === "[data-github-repo-name]") return this;
+    return null;
   }
 }
 

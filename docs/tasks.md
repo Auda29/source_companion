@@ -228,13 +228,13 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 ### T38 - GitHub Auth und Basis-API-Client implementieren
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T37`
 - Definition of Done: GitHub Login und Logout funktionieren gemaess `T37`; Token werden ueber den entschiedenen sicheren Speicher gelesen und geschrieben; Auth-Status ist fuer Repository-Kontexte und GitHub-Aktionen abrufbar; User-Repositories koennen geladen und durchsucht werden; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert und lesbar angezeigt.
 - Implementierungsnotiz: API-Client klein halten: Login-Status, User-Repos und gemeinsame Fehlernormalisierung zuerst. PR-, Checks- und Publish-spezifische API-Methoden in den abhaengigen Tasks ergaenzen, nicht als versteckten Rundumschlag.
 - Notiz: Review-Punkt adressiert: `src/github-api-client.js` trennt jetzt einen tokenfreien Renderer-Bridge-Client von der backend-/testseitigen Token-API, nutzt ohne explizit injizierten SecureTokenStore keinen Memory-Fallback mehr und exportiert im Browser nur die Bridge-Fassade. `src/main.js` erstellt GitHub-Clients ueber eine backend-only Bridge bzw. Tauri-Commands statt ueber DeviceFlow/Tokenzugriff im Renderer; neue Tests sichern tokenfreie Bridge-Ergebnisse und fehlenden Store-Fallback ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. `src/github-api-client.js` trennt den tokenfreien Renderer-Bridge-Client von der backend-/testseitigen Token-API, verlangt fuer den direkten API-Client einen explizit injizierten sicheren TokenStore, normalisiert Auth-/Scope-/RateLimit-/Netzwerk-/API-Fehler und liefert tokenfreie Auth-/Repository-Ergebnisse; `src/main.js` nutzt fuer den Renderer eine backend-only Bridge bzw. Tauri-Commands. Fokussierte GitHub-Client-Tests und die vollstaendige Node-Test-Suite bestanden.
 - Offene Review-Punkte: -
 
 ### T39 - Clone per URL bauen
@@ -250,11 +250,12 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 ### T40 - Clone from GitHub bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T4`, `T38`, `T39`
 - Definition of Done: Clone from GitHub zeigt durchsuchbare Repositories des eingeloggten Users mit Owner/Name, Beschreibung, Sichtbarkeit, Stars, Clone-URL und private/public Indikator, soweit GitHub diese Daten liefert; die gewaehlte Clone-URL ist vor Ausfuehrung sichtbar; Zielordner ist frei waehlbar; Clone-Fortschritt und Fehler sind sichtbar; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
 - Implementierungsnotiz: Reuse des URL-Clone-Flows aus `T39`; GitHub-Auswahl liefert nur Repository-Metadaten und Clone-URL. Keine GitHub-Dashboard-, Issue- oder Notification-Funktionen aufnehmen.
+- Notiz: GitHub-Clone nutzt jetzt die ausgewaehlte Repository-Clone-URL und startet denselben Clone-Runner wie der URL-Clone-Flow mit frei waehlbarem finalem Zielordner; die Repository-Liste zeigt Beschreibung, Sichtbarkeit/private-public, Stars und Clone-URL, und ein Regressionstest prueft die Uebergabe der GitHub-Clone-URL an den Clone-Runner.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

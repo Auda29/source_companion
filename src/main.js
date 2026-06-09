@@ -96,10 +96,13 @@
 
       const repoTarget = target.closest ? target.closest("[data-github-repo-name]") : target;
       if (repoTarget && repoTarget.dataset && repoTarget.dataset.githubRepoName) {
-        selectGitHubRepository({
-          fullName: repoTarget.dataset.githubRepoName,
-          cloneUrl: repoTarget.dataset.githubRepoCloneUrl || ""
-        });
+        const fullName = repoTarget.dataset.githubRepoName;
+        selectGitHubRepository(
+          state.githubRepositories.items.find((repo) => repo.fullName === fullName) || {
+            fullName,
+            cloneUrl: repoTarget.dataset.githubRepoCloneUrl || ""
+          }
+        );
       }
     });
   }
@@ -140,19 +143,7 @@
     }
 
     if (flow === "github") {
-      const selected = state.githubRepositories.selected;
-      const name = clean(formData.get("name")) || (selected ? selected.fullName : "");
-      const target = clean(formData.get("target"));
-      if (!name.includes("/") || !isAbsolutePath(target)) {
-        setMessage("error", "Enter owner/repository and an absolute target folder.");
-        render();
-        return false;
-      }
-
-      const repoName = name.split("/").pop();
-      const path = joinPath(target, repoName);
-      openPreparedRepository(path, repoName, "GitHub clone setup", { initialOperationKind: "clone" });
-      return true;
+      return prepareGitHubClone(formData.get("name"), formData.get("target"));
     }
 
     if (flow === "publish") {
@@ -197,6 +188,26 @@
       url,
       targetPath: target,
       displayName: displayNameFromPath(target)
+    });
+    return true;
+  }
+
+  function prepareGitHubClone(nameValue, targetValue) {
+    const name = clean(nameValue);
+    const target = clean(targetValue);
+    const selected = selectedGitHubRepositoryForName(name);
+    const cloneUrl = selected ? clean(selected.cloneUrl) : "";
+
+    if (!selected || !name.includes("/") || !isCloneUrl(cloneUrl) || !isAbsolutePath(target)) {
+      setMessage("error", "Select a GitHub repository and enter an absolute target folder.");
+      render();
+      return false;
+    }
+
+    openCloneRepository({
+      url: cloneUrl,
+      targetPath: target,
+      displayName: displayNameFromPath(target) || selected.name || name.split("/").pop()
     });
     return true;
   }
@@ -814,6 +825,13 @@
     renderGitHubDialog();
   }
 
+  function selectedGitHubRepositoryForName(name) {
+    const normalizedName = clean(name);
+    const selected = state.githubRepositories.selected;
+    if (selected && selected.fullName === normalizedName) return selected;
+    return state.githubRepositories.items.find((repo) => repo.fullName === normalizedName) || null;
+  }
+
   function renderGitHubDialog() {
     if (!githubAuthStatus || !githubRepoList) return;
 
@@ -869,8 +887,12 @@
         <span>
           <strong>${escapeHtml(repo.fullName)}</strong>
           <small>${escapeHtml(repo.description || "No description")}</small>
+          <small>${escapeHtml(repo.cloneUrl || "No clone URL")}</small>
         </span>
-        <span class="status-pill ${repo.private ? "warning" : "ready"}">${escapeHtml(repo.visibility || (repo.private ? "private" : "public"))}</span>
+        <span class="github-repo-meta">
+          <span class="status-pill ${repo.private ? "warning" : "ready"}">${escapeHtml(repo.visibility || (repo.private ? "private" : "public"))}</span>
+          <span class="status-pill">${escapeHtml(`${repo.stars || 0} stars`)}</span>
+        </span>
       </button>
     `).join("");
   }
@@ -2944,11 +2966,6 @@
   function displayNameFromPath(path) {
     const cleaned = clean(path).replace(/[\\/]+$/, "");
     return cleaned.split(/[\\/]/).pop() || "Repository";
-  }
-
-  function joinPath(parent, child) {
-    const separator = parent.includes("\\") ? "\\" : "/";
-    return `${parent.replace(/[\\/]+$/, "")}${separator}${child}`;
   }
 
   function samePath(first, second) {
