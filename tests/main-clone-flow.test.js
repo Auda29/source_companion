@@ -266,6 +266,92 @@ test("publish preflight output stays visible with remote overwrite warning", asy
   assert.match(workspace, /will not overwrite or replace remotes automatically/);
 });
 
+test("repository workspace renders collapsed history panel from repository state", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const openForm = new FakeForm("open", {
+    path: "C:\\code\\project"
+  });
+  const document = new FakeDocument([openForm]);
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionRepositoryState: {
+        loadRepositoryState: async () => ({
+          kind: "git-repository",
+          health: "ready",
+          error: null,
+          operations: {
+            running: [],
+            queued: [],
+            completed: [],
+            lastCompleted: null
+          },
+          github: null,
+          git: {
+            branch: { name: "main", detached: false, headSha: "abc123456789" },
+            remote: { name: "origin", kind: "github" },
+            remotes: [],
+            upstream: { name: "origin/main" },
+            divergence: { ahead: 1, behind: 2 },
+            files: [],
+            staged: [],
+            unstaged: [],
+            untracked: [],
+            conflicted: [],
+            stashes: [],
+            history: {
+              status: "ready",
+              message: "1 commit loaded.",
+              commits: [{
+                hash: "abc123456789",
+                shortHash: "abc1234",
+                author: "Test User",
+                authoredAt: "2026-06-09T10:00:00+02:00",
+                subject: "Render history"
+              }],
+              head: {
+                hash: "abc123456789",
+                shortHash: "abc1234",
+                author: "Test User",
+                authoredAt: "2026-06-09T10:00:00+02:00",
+                subject: "Render history"
+              },
+              selectedCommit: null,
+              selectedDiff: "diff --git a/README.md b/README.md\n+hello",
+              error: null
+            }
+          }
+        })
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await openForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const workspace = document.getElementById("workspaceContent").innerHTML;
+  assert.match(workspace, /Graph \/ History/);
+  assert.match(workspace, /origin\/main/);
+  assert.match(workspace, /1 ahead, 2 behind/);
+  assert.match(workspace, /Render history/);
+  assert.match(workspace, /HEAD commit diff: abc1234/);
+});
+
 class FakeStorage {
   constructor() {
     this.values = new Map();

@@ -440,6 +440,153 @@ textarea {
   background: var(--surface);
 }
 
+.history-panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.history-panel summary {
+  min-height: 48px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.history-panel summary span:first-child,
+.history-commit-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.history-panel summary strong,
+.history-panel summary small,
+.history-commit-text strong,
+.history-commit-text span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-panel summary strong {
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.history-panel summary small,
+.history-meta span,
+.history-commit-text span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.history-content {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+}
+
+.history-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-meta div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.history-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.history-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.history-list {
+  display: grid;
+  align-content: start;
+  gap: 0;
+}
+
+.history-commit {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 0;
+}
+
+.history-node {
+  position: relative;
+  display: inline-grid;
+  justify-self: center;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.history-node::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 3px;
+  width: 2px;
+  height: 32px;
+  background: var(--border);
+}
+
+.history-commit:last-child .history-node::after {
+  display: none;
+}
+
+.history-diff {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.history-diff-view {
+  max-height: 360px;
+}
+
+.history-empty,
+.history-status {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.history-status.error {
+  border-color: #efb3b3;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
 .branch-panel-heading,
 .sync-panel-heading,
 .stash-panel-heading {
@@ -1338,6 +1485,8 @@ textarea {
   }
 
   .branch-grid,
+  .history-grid,
+  .history-meta,
   .branch-form,
   .branch-form:first-child,
   .branch-form:nth-child(3) {

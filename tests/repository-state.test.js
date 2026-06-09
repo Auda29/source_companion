@@ -92,6 +92,7 @@ test("parses GitHub remotes and authenticated GitHub state", async (t) => {
 
   assert.equal(state.kind, "github-authenticated");
   assert.equal(state.git.remote.kind, "github");
+  assert.equal(state.git.history.status, "empty");
   assert.deepEqual(state.github, {
     owner: "example",
     name: "source-companion",

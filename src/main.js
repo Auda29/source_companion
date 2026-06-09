@@ -643,7 +643,8 @@
         remote: null,
         upstream: null,
         divergence: { ahead: 0, behind: 0 },
-        files: []
+        files: [],
+        history: emptyHistoryState()
       },
       github: null,
       operations: {
@@ -2483,6 +2484,7 @@
         ${renderBranchPanel(repo)}
         ${renderSyncPanel(repo)}
         ${renderStashPanel(repo)}
+        ${renderHistoryPanel(repo)}
         ${renderCommitBox(repo)}
         <div class="source-control-layout">
           <div class="change-lists">
@@ -2713,6 +2715,73 @@
         </div>
         <div class="branch-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
       </section>
+    `;
+  }
+
+  function renderHistoryPanel(repo) {
+    const git = repo.git || {};
+    const history = normalizeHistoryState(git.history);
+    const head = history.head || history.selectedCommit || null;
+    const commits = Array.isArray(history.commits) ? history.commits : [];
+    const status = history.error ? "failed" : history.status === "ready" ? "idle" : "blocked";
+    const headLabel = head ? `${head.shortHash || String(head.hash).slice(0, 7)} ${head.subject || ""}` : "No HEAD commit";
+
+    return `
+      <details class="history-panel">
+        <summary>
+          <span>
+            <strong>Graph / History</strong>
+            <small>${escapeHtml(branchLabel(git.branch))} / ${escapeHtml(upstreamLabel(git.upstream))} / ${escapeHtml(divergenceLabel(git.divergence))}</small>
+          </span>
+          <span class="status-pill ${branchStatusClass({ status })}">${escapeHtml(historyStatusLabel(history))}</span>
+        </summary>
+        <div class="history-content">
+          <div class="history-meta">
+            <div>
+              <span>Current branch</span>
+              <strong>${escapeHtml(branchLabel(git.branch))}</strong>
+            </div>
+            <div>
+              <span>Remote branch</span>
+              <strong>${escapeHtml(upstreamLabel(git.upstream))}</strong>
+            </div>
+            <div>
+              <span>HEAD</span>
+              <strong>${escapeHtml(headLabel)}</strong>
+            </div>
+            <div>
+              <span>Divergence</span>
+              <strong>${escapeHtml(divergenceLabel(git.divergence))}</strong>
+            </div>
+          </div>
+          ${history.error ? `
+            <div class="history-status error">${escapeHtml(history.error.message || "Commit history could not be loaded.")}</div>
+          ` : ""}
+          <div class="history-grid">
+            <div class="history-list" aria-label="Commit history">
+              ${commits.length === 0 ? '<div class="history-empty">No commits.</div>' : commits.map(renderHistoryCommit).join("")}
+            </div>
+            <div class="history-diff">
+              <div class="diff-meta">${escapeHtml(head ? `HEAD commit diff: ${head.shortHash || head.hash}` : history.message || "No commit diff available.")}</div>
+              ${history.selectedDiff ? `
+                <pre class="diff-view history-diff-view" tabindex="0"><code>${renderUnifiedDiff(history.selectedDiff)}</code></pre>
+              ` : '<div class="preview-state empty">No commit diff is available.</div>'}
+            </div>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function renderHistoryCommit(commit) {
+    return `
+      <article class="history-commit">
+        <span class="history-node" aria-hidden="true"></span>
+        <div class="history-commit-text">
+          <strong>${escapeHtml(commit.subject || "Commit")}</strong>
+          <span>${escapeHtml(commit.shortHash || String(commit.hash || "").slice(0, 7))} / ${escapeHtml(commit.author || "Unknown author")} / ${escapeHtml(commit.authoredAt || "")}</span>
+        </div>
+      </article>
     `;
   }
 
@@ -3255,6 +3324,13 @@
     return "Ready";
   }
 
+  function historyStatusLabel(history) {
+    if (!history) return "Empty";
+    if (history.error) return "Error";
+    if (history.status === "ready") return "Ready";
+    return "Empty";
+  }
+
   function branchStatusClass(status) {
     if (!status) return "ready";
     if (status.status === "running") return "warning";
@@ -3308,8 +3384,26 @@
       unstaged: Array.isArray(source.unstaged) ? source.unstaged : files.filter((file) => file.unstaged),
       untracked: Array.isArray(source.untracked) ? source.untracked : files.filter((file) => file.untracked),
       conflicted: Array.isArray(source.conflicted) ? source.conflicted : files.filter((file) => file.conflicted),
-      stashes: Array.isArray(source.stashes) ? source.stashes : []
+      stashes: Array.isArray(source.stashes) ? source.stashes : [],
+      history: normalizeHistoryState(source.history)
     };
+  }
+
+  function normalizeHistoryState(history) {
+    const source = history || {};
+    return {
+      status: source.status || "empty",
+      message: source.message || "No commits are available yet.",
+      commits: Array.isArray(source.commits) ? source.commits : [],
+      head: source.head || null,
+      selectedCommit: source.selectedCommit || null,
+      selectedDiff: clean(source.selectedDiff),
+      error: source.error || null
+    };
+  }
+
+  function emptyHistoryState() {
+    return normalizeHistoryState(null);
   }
 
   function normalizeOperations(operations) {

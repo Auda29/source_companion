@@ -297,16 +297,18 @@ function buildInitArgs(options) {
 }
 
 function buildLogArgs(options) {
-  assertKnownOptions(options, ["maxCount", "ref"]);
+  assertKnownOptions(options, ["maxCount", "ref", "patch", "format"]);
   const maxCount = Number.isInteger(options.maxCount) ? options.maxCount : 50;
   if (maxCount < 1 || maxCount > 500) {
     throw new GitWrapperError("invalid-arguments", "maxCount must be between 1 and 500.");
   }
 
+  const format = options.format === "empty" ? "" : "%H%x09%an%x09%aI%x09%s";
   return [
     "log",
     `--max-count=${maxCount}`,
-    "--pretty=format:%H%x09%an%x09%aI%x09%s",
+    `--pretty=format:${format}`,
+    options.patch ? "--patch" : null,
     optionalRef(options.ref)
   ].filter(Boolean);
 }

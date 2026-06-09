@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 
 const { runGitCommand } = require("./git-cli-wrapper");
+const { loadRepositoryHistory } = require("./repository-history");
 
 const CONFLICT_CODES = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 
@@ -74,6 +75,10 @@ async function loadRepositoryState({
     repositoryPath: normalizedPath,
     options: { mode: "list" }
   });
+  const history = await loadRepositoryHistory({
+    repositoryPath: normalizedPath,
+    execute
+  });
   const remotes = remoteResult.ok ? parseRemotes(remoteResult.stdout) : [];
   const primaryRemote = choosePrimaryRemote(remotes);
   const github = createGitHubState(primaryRemote, githubAuth);
@@ -87,7 +92,9 @@ async function loadRepositoryState({
     health,
     operations,
     git: {
-      branch: parsedStatus.branch,
+      branch: history.head && parsedStatus.branch
+        ? { ...parsedStatus.branch, headSha: history.head.hash }
+        : parsedStatus.branch,
       remote: primaryRemote,
       remotes,
       upstream: parsedStatus.upstream,
@@ -97,7 +104,8 @@ async function loadRepositoryState({
       unstaged: parsedStatus.files.filter((file) => file.unstaged),
       untracked: parsedStatus.files.filter((file) => file.untracked),
       conflicted,
-      stashes: stashResult.ok ? parseStashList(stashResult.stdout) : []
+      stashes: stashResult.ok ? parseStashList(stashResult.stdout) : [],
+      history
     },
     github,
     error: remoteResult.ok ? null : normalizeGitError(remoteResult.error)
@@ -334,7 +342,20 @@ function emptyGitState() {
     unstaged: [],
     untracked: [],
     conflicted: [],
-    stashes: []
+    stashes: [],
+    history: emptyHistoryState()
+  };
+}
+
+function emptyHistoryState() {
+  return {
+    status: "empty",
+    message: "No commits are available yet.",
+    commits: [],
+    head: null,
+    selectedCommit: null,
+    selectedDiff: "",
+    error: null
   };
 }
 

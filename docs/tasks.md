@@ -298,11 +298,12 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T21 - Einklappbaren Graph/History-Bereich bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T6`, `T8`, `T11`
 - Definition of Done: Einklappbarer Graph/History-Bereich zeigt Commit-History, aktuellen Branch, Remote-Branch, HEAD, Commit-Metadaten, Commit-Diff und lokale/remote Divergenz; Bereich bleibt optional sichtbar und verdraengt die Kern-Source-Control-UI nicht dauerhaft.
 - Implementierungsnotiz: Kein Activity Feed, keine Analytics, kein Projektmanagement-Dashboard.
+- Notiz: `src/repository-history.js` laedt Commit-History und HEAD-Commit-Diff ueber den whitelisted `git log`-Wrapper; `src/repository-state.js` haengt History-Daten inklusive HEAD-SHA an den Repository-Kontext, und `src/main.js` rendert einen standardmaessig eingeklappten Graph/History-Bereich mit Branch, Remote-Branch, HEAD, Divergenz, Commit-Metadaten und Diff. Fokussierte History-/Main-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -324,7 +325,7 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 - Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
-- Notiz: 2026-06-09 11:30 CEST erneut nicht umgesetzt, weil T24 von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
+- Notiz: 2026-06-09 11:45 CEST erneut nicht umgesetzt, weil T24 von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

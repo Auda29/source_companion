@@ -89,6 +89,13 @@ test("builds Git arguments from structured options", () => {
     "--track",
     "origin/feature"
   ]);
+  assert.deepEqual(buildGitArgs("log", { maxCount: 1, ref: "HEAD", patch: true, format: "empty" }), [
+    "log",
+    "--max-count=1",
+    "--pretty=format:",
+    "--patch",
+    "HEAD"
+  ]);
 });
 
 test("rejects non-whitelisted actions and force-push options", async () => {
