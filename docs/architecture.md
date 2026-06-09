@@ -1,289 +1,188 @@
-# Source Companion - Architektur-Start
+# Source Companion Architecture
 
-Dieses Dokument beschreibt die erste technische Komponentenstruktur fuer Source Companion. `docs/plan.md` bleibt die verbindliche Produktquelle; `docs/scope-gates.md` begrenzt neue Architekturentscheidungen auf Git/GitHub-Versionskontrolle.
+`docs/plan.md` is the product source of truth. This document describes the current technical structure and the boundaries that keep Source Companion focused on Git/GitHub source control.
 
-## Architekturprinzipien
+## Architecture Principles
 
-- Jeder geoeffnete Tab repraesentiert genau einen Repository-Kontext.
-- UI-Komponenten duerfen Git- und GitHub-Aktionen nur ueber whitelisted Backend-Schnittstellen starten.
-- Es gibt keinen freien Command Runner, kein Terminal, keinen Editor und keine Plugin-Plattform.
-- Fehler werden strukturiert an die UI gemeldet und koennen zusaetzlich rohe Git- oder GitHub-Ausgaben enthalten.
+- Each open tab represents exactly one repository context.
+- UI code can start Git and GitHub actions only through whitelisted backend or desktop bridge interfaces.
+- There is no free command runner, terminal, editor, project tree, workspace model, or plugin platform.
+- Errors are returned as structured objects and may include raw Git/GitHub output for Git Output diagnostics.
+- Floating Window and Full UI share repository state, Git Operation Queue, watchers, and Git Output.
 
-## Runtime-Entscheidung
+## Runtime Shape
 
-Die Web-/HTML-UI bleibt die Frontend-Schicht fuer Prototyp und Full UI. Fuer das Desktop-Ziel ist Tauri gewaehlt; die Begruendung und Bewertung gegen Electron stehen in `docs/desktop-runtime-decision.md`.
+The reusable frontend is the web/HTML Full UI. The desktop target packages that UI in Tauri and adds a controlled native bridge for local capabilities.
 
-Tauri stellt nur eine kontrollierte Bridge fuer lokale Git-CLI-Ausfuehrung, Dateiwatcher, Datei-/Ordnerauswahl, GitHub Auth und sicheren Tokenzugriff bereit. Renderer-Code erhaelt keine freie Node-, Shell- oder Dateisystem-Schnittstelle. Floating Window und Full UI muessen denselben Repository-State und dieselbe Git Operation Queue nutzen.
+Tauri exposes only named commands for repository open/state/diff/actions, native folder dialogs, repository watchers, GitHub auth, repository listing/search, clone, publish, PRs, checks, and review context. Renderer code receives no free Node, shell, filesystem, token, or generic GitHub API access.
 
-## UI-Schichten
+## UI Layers
 
-### App Shell und Projektauswahl
+### App Shell And Repository Selection
 
-Verantwortung:
-- zuletzt geoeffnete Repositories anzeigen
-- lokale Repositories, Clone- und Publish-Einstiege anbieten
-- Repository-Kontexte als Tabs oeffnen und schliessen
+Responsibilities:
 
-Erlaubte Eingaben:
-- lokal ausgewaehlte Ordnerpfade
-- Clone-URLs
-- GitHub-Repository-Auswahl aus dem GitHub API Client
-- Nutzeraktionen fuer Oeffnen, Clone, Publish und Tab-Wechsel
+- show recent repositories
+- offer Open Repository, Clone Repo, Clone from GitHub, and Publish to GitHub entry points
+- open and close repository contexts as tabs
+- show empty and error states
 
-Fehlerausgaben:
-- ungueltiger oder nicht mehr vorhandener Pfad
-- Ordner ohne Git-Repository
-- Clone- oder Publish-Vorbedingungen nicht erfuellt
-- fehlende GitHub-Authentifizierung
+Allowed inputs:
 
-Ausgeschlossene Funktionen:
-- Workspaces
-- Projektbaum
-- Dashboard- oder Projektmanagementansichten
+- locally selected folder paths
+- clone URLs
+- GitHub repository metadata from the GitHub client/bridge
+- user actions for open, clone, publish, and tab switching
 
-### Source-Control-Schicht
+Excluded:
 
-Verantwortung:
-- aktuellen Repository-Zustand darstellen
-- Changed, Staged, Untracked und Conflicts trennen
-- Datei- und Hunk-Aktionen ausloesen
-- Commit-, Branch-, Sync- und Stash-Aktionen sichtbar machen
+- workspaces
+- project tree
+- dashboard or project-management views
 
-Erlaubte Eingaben:
-- aktiver Repository-Kontext
-- strukturierte Git-Zustandsdaten
-- Nutzeraktionen fuer erlaubte Git-Kommandos
-- bestaetigte Sicherheitsdialoge fuer riskante Aktionen
+### Source-Control Layer
 
-Fehlerausgaben:
-- lesbare Git-Fehler nahe der betroffenen Aktion
-- Operation-laeuft- und Abbruchzustaende
-- Konfliktzustaende nach Pull, Merge oder Stash Apply
+Responsibilities:
 
-Ausgeschlossene Funktionen:
-- Datei-Bearbeitung
-- Terminal-Ausgaben als einzige Fehlererklaerung
-- Force Push oder versteckte History-Rewrites
+- render current repository state
+- separate Changed, Staged, Untracked, and Conflicts
+- trigger file, hunk, commit, branch, sync, merge, and stash actions
+- keep busy, warning, and error states near the affected UI
 
-### Diff- und History-Schicht
+Allowed inputs:
 
-Verantwortung:
-- unified Diff fuer ausgewaehlte Dateien darstellen
-- staged und unstaged Diffs unterscheidbar anzeigen
-- Binary-, neue, geloeschte und umbenannte Dateien verstaendlich behandeln
-- einklappbare Commit-History und Divergenz anzeigen
+- active repository context
+- structured Git status data
+- user actions for allowed source-control commands
+- confirmed safety prompts for risky actions
 
-Erlaubte Eingaben:
-- Repository-Kontext
-- Dateipfad und Diff-Modus
-- Commit- oder Branch-Auswahl fuer History-Ansichten
+Excluded:
 
-Fehlerausgaben:
-- Diff nicht verfuegbar
-- Binary-Datei ohne Textdiff
-- veralteter oder nicht mehr passender Hunk
-- Git-Fehler beim Laden von Log oder Diff
+- file editing
+- free terminal output as the only error explanation
+- force push or hidden history rewrites
 
-Ausgeschlossene Funktionen:
-- Side-by-side Diff als Pflicht fuer den Startumfang
-- Inline-Editor
-- Activity Feed oder Analytics-Dashboard
+### Diff And History Layer
 
-## Backend-Komponenten
+Responsibilities:
 
-### Repository-Kontextmodell
+- show readable unified diffs for selected files
+- distinguish staged and unstaged diffs
+- show replacement/error states for binary, untracked, deleted, renamed, empty, and conflicted files
+- show collapsible history/graph data and local/remote divergence
 
-Verantwortung:
-- Pfad, Anzeigenamen, Git-Zustand, Branch, Remote, Upstream, ahead/behind und GitHub-Verknuepfung pro Tab halten
-- laufende Operationen und Fehler pro Repository isolieren
-- globale Vermischung zwischen Tabs verhindern
+Excluded:
 
-Erlaubte Eingaben:
-- normalisierte lokale Pfade
-- Ergebnisse aus Git CLI Wrapper, Dateiwatcher und GitHub API Client
-- Nutzeraktionen, die einem konkreten Repository-Kontext zugeordnet sind
+- required side-by-side diff for the first product goal
+- inline editor
+- activity feed or analytics dashboard
 
-Fehlerausgaben:
-- `invalid-path`
-- `not-a-git-repository`
-- `git-error`
-- `github-error`
-- `operation-running`
-- `conflict`
+### Desktop Floating Window
 
-Ausgeschlossene Funktionen:
-- Workspace-Modell
-- globaler aktiver Repository-Singleton als Quelle fuer Operationen
-- Zustandsableitung aus verstreuten UI-Flags
+Responsibilities:
+
+- show active repository, branch, upstream/divergence, change counters, status/error, and compact commit message
+- expose only refresh, commit, commit and push, push, pull/sync, and Open Full UI
+- forward detailed or risky flows to the Full UI
+
+Excluded:
+
+- duplicate repository state
+- independent Git execution
+- detailed diff, file list, branch management, stash, PRs, checks, or Git Output
+
+## Backend Components
+
+### Repository Context Model
+
+The repository context holds path, display name, kind, health, Git state, GitHub link, running/queued operations, current error, and refresh state for one tab. Multiple contexts must not share implicit active state.
+
+See `docs/repository-context-model.md`.
 
 ### Git CLI Wrapper
 
-Verantwortung:
-- erlaubte Git-Kommandos strukturiert ausfuehren
-- stdout, stderr, Exit-Code und lesbare Fehler getrennt erfassen
-- lange Operationen fuer Abbruch vorbereiten
+Responsibilities:
 
-Erlaubte Eingaben:
-- Repository-Pfad
-- whitelisted Git-Aktion
-- strukturierte Argumente fuer `status`, `diff`, `add`, `restore`, `commit`, `branch`, `switch`, `fetch`, `pull`, `push`, `remote`, `clone`, `init`, `log` und `stash`
-- optionales Abort-Signal fuer lange Operationen
+- run allowed Git commands with structured arguments
+- capture stdout, stderr, exit code, and normalized errors separately
+- reject free shell commands and unsupported Git subcommands
+- prepare long operations for cancellation
 
-Fehlerausgaben:
-- Exit-Code
-- stdout
-- stderr
-- normalisierte Fehlerkategorie
-- nutzerlesbarer Fehlertext
-
-Ausgeschlossene Funktionen:
-- freie Shell-Kommandos
-- nicht whitelisted Git-Subcommands aus der UI
-- stiller Force Push
-- automatisches Commit, Push oder Publish
+Covered action families include status, diff, add, restore, commit, branch, switch, fetch, pull, push, remote, clone, init, log, merge, and stash.
 
 ### Git Operation Queue
 
-Verantwortung:
-- Git-Operationen pro Repository serialisieren
-- parallele Operationen in unterschiedlichen Repositories erlauben
-- Status-Refreshes fair einplanen und nicht dauerhaft verdraengen
+Responsibilities:
 
-Erlaubte Eingaben:
-- Repository-Kontext-ID
-- Git-Operation aus dem Git CLI Wrapper
-- Prioritaet fuer Status-Refresh oder Nutzeraktion
-- Abort-Signal
+- serialize Git operations per repository
+- allow operations in different repositories to run independently
+- expose queued, running, succeeded, failed, and aborted states
+- keep status refreshes from starving behind user actions
 
-Fehlerausgaben:
-- `queued`
-- `running`
-- `succeeded`
-- `failed`
-- `aborted`
-- letzter strukturierter Git-Fehler
+### Repository Status Watcher
 
-Ausgeschlossene Funktionen:
-- globale Queue fuer alle Repositories
-- parallele schreibende Git-Operationen im selben Repository
-- stille Retry-Schleifen ohne sichtbaren Status
+Responsibilities:
+
+- watch worktree, index, and relevant `.git` metadata changes
+- debounce refreshes
+- defer or coordinate refreshes while repository operations are running
+- stop cleanly when the tab closes
 
 ### GitHub API Client
 
-Verantwortung:
-- GitHub Login-Status nutzen
-- User-Repositories laden und durchsuchen
-- Repositories erstellen
-- PRs, Checks und Review-Kommentare lesen oder erstellen, soweit im Produktplan erlaubt
+Responsibilities:
 
-Erlaubte Eingaben:
-- gespeichertes GitHub-Token
-- Such- und Filterparameter fuer Repositories
-- Repository Owner/Name
-- PR- und Branch-Daten
-- Publish-Daten wie Name, Beschreibung und Sichtbarkeit
+- use backend-internal GitHub auth
+- list/search user repositories
+- create repositories for publish
+- look up and create PRs
+- load checks, review comments, and issue links in source-control context
+- normalize missing auth, missing scopes, rate limits, network failures, permission failures, and API errors
 
-Fehlerausgaben:
-- fehlende Authentifizierung
-- fehlende Berechtigung
-- Rate Limit
-- Netzwerkfehler
-- GitHub API Fehlertext und Statuscode
+Excluded:
 
-Ausgeschlossene Funktionen:
-- GitLab-, Bitbucket- oder Forge-Abstraktion
-- Issue Board, Kanban, Wiki oder Discussions
-- eigenes SSH-Key-Management
+- GitLab, Bitbucket, or generic forge abstraction
+- issue boards, notifications, workflow control, discussions, wiki, or dashboard features
+- renderer token access
 
-Auth-Entscheidung:
-- Der konkrete GitHub-Auth-Flow und die sichere Token-Speicherung sind in `docs/github-auth-decision.md` festgelegt.
-- GitHub-API-Token duerfen nur durch die Auth-/Token-Verwaltung gelesen werden; der API Client erhaelt Tokens backend-intern und gibt sie nie an den Renderer weiter.
+### Local State Store
 
-### Dateiwatcher
+Responsibilities:
 
-Verantwortung:
-- Datei-, Index- und Git-Metadaten-Aenderungen erkennen
-- Status-Refresh entprellen
-- Branch-Wechsel und relevante `.git`-Aenderungen abdecken
+- persist recent repositories
+- persist non-sensitive UI preferences, such as active tab, collapsed history, view mode, and last folder hints
+- avoid storing running operations, transient errors, tokens, secrets, or GitHub access credentials
 
-Erlaubte Eingaben:
-- Repository-Pfad
-- Watcher-Konfiguration fuer Arbeitsbaum und `.git`
-- Queue-Schnittstelle fuer geplante Refreshes
+### Auth And Token Management
 
-Fehlerausgaben:
-- Watcher nicht startbar
-- Pfad verschwunden
-- Refresh wegen laufender Operation verschoben
-- Watcher-Event verworfen oder zusammengefasst
+Desktop GitHub auth uses an OAuth Device Authorization Flow coordinated in the backend. Tokens are stored through an OS credential-store abstraction:
 
-Ausgeschlossene Funktionen:
-- blindes Neuladen bei jedem Event
-- Dateiinhalte bearbeiten
-- Build-, Test- oder Task-Runner starten
+- Windows Credential Manager
+- macOS Keychain
+- Linux Secret Service/libsecret
 
-### Lokaler State Store
+Renderer responses contain only token-free auth status, user code, verification URL, expiration, polling interval, metadata, and structured errors. The web prototype must not add persistent GitHub auth.
 
-Verantwortung:
-- zuletzt geoeffnete Repositories speichern
-- UI-Praeferenzen fuer erlaubte Git-Ansichten halten
-- nicht-sensitive Repository-Metadaten persistieren
+See `docs/github-auth-decision.md`.
 
-Erlaubte Eingaben:
-- normalisierte Repository-Pfade
-- Anzeigenamen
-- zuletzt genutzte Clone-Zielordner
-- UI-Zustand wie aktiver Tab, eingeklappter History-Bereich oder View Mode
+### Desktop Bridge
 
-Fehlerausgaben:
-- Store nicht lesbar
-- Store nicht schreibbar
-- gespeicherter Pfad ist ungueltig
-- gespeicherter Zustand wurde verworfen
+The bridge is the only renderer facade for local desktop actions. It delegates Git execution to `GitOperationQueue` and the Git CLI wrapper, uses native dialogs only for the allowed open/clone/publish flows, hosts persistent repository watchers, and routes GitHub auth/API calls through backend-only clients.
 
-Ausgeschlossene Funktionen:
-- Token oder andere Geheimnisse speichern
-- Workspace-Verwaltung
-- Projektmanagementdaten
+See `docs/desktop-bridge.md`.
 
-### Auth- und Token-Verwaltung
+## Error Contract
 
-Verantwortung:
-- GitHub-Login starten und beenden
-- Token sicher speichern und abrufen
-- fehlende oder unzureichende Berechtigungen fuer GitHub-Funktionen melden
+Backend responses that can fail return at least:
 
-Erlaubte Eingaben:
-- GitHub Device-Flow-Ergebnis gemaess `docs/github-auth-decision.md`
-- Logout-Aktion
-- Anfrage nach Auth-Status fuer GitHub-Funktionen
+```js
+{
+  kind: "git-error",
+  message: "Readable user-facing message.",
+  raw: null,
+  operationId: null,
+  repositoryId: null
+}
+```
 
-Fehlerausgaben:
-- Login fehlgeschlagen
-- Token fehlt
-- Token abgelaufen oder widerrufen
-- Scope reicht nicht aus
-- sichere Speicherung nicht verfuegbar
-
-Ausgeschlossene Funktionen:
-- eigenes SSH-Key-Management
-- Speicherung von Tokens im lokalen State Store
-- Speicherung von Tokens im Renderer, in Web Storage, in Repository-Kontexten, in Git-Remote-URLs oder in Git-Command-Argumenten
-- automatische GitHub-Aktionen ohne explizite Nutzeraktion
-
-Speicherentscheidung:
-- Tauri koordiniert den GitHub OAuth Device Authorization Flow im Backend.
-- Tokens werden ueber eine native `SecureTokenStore`-Abstraktion im Betriebssystem-Credential-Store gespeichert: Windows Credential Manager, macOS Keychain oder Linux Secret Service/libsecret.
-- Der Web-Prototyp darf keine persistente GitHub-Auth einfuehren; echte Persistenz beginnt erst in der Desktop-Shell.
-
-## Fehlervertrag
-
-Jede Backend-Antwort, die fehlschlagen kann, liefert mindestens:
-
-- `kind`: normalisierte Fehlerkategorie
-- `message`: kurze nutzerlesbare Beschreibung
-- `raw`: optionale Rohdaten wie stdout, stderr oder API-Antwort
-- `operationId`: Zuordnung zu laufender Operation, falls vorhanden
-- `repositoryId`: Zuordnung zum Repository-Kontext, falls vorhanden
-
-Damit kann die UI Fehler direkt an der betroffenen Aktion zeigen und rohe Ausgaben im Git Output zugaenglich halten.
+Git operations should also preserve stdout, stderr, and exit code where relevant. GitHub operations may include status code, scope details, rate-limit metadata, and retry hints. The UI should show short actionable errors near the affected action and keep redacted raw details available in Git Output.

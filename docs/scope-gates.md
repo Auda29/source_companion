@@ -1,72 +1,75 @@
-# Source Companion - Scope-Gates
+# Source Companion Scope Gates
 
-Dieses Dokument fasst die verbindlichen Produktgrenzen aus `docs/plan.md` zusammen. `docs/plan.md` bleibt die Produktquelle; diese Gates sind die kurze Pruefung fuer neue Features, Tasks und Architekturentscheidungen.
+`docs/plan.md` is the product source of truth. These gates are the quick test for new features, tasks, and architecture decisions.
 
-## 1. Produktquellen-Gate
+## 1. Product Source Gate
 
-Jede Produktentscheidung muss auf `docs/plan.md` zurueckfuehrbar sein. Wenn ein Feature dort nicht direkt vorgesehen ist, braucht es vor der Umsetzung eine Plananpassung statt einer stillen Implementierung.
+Every product decision must trace back to `docs/plan.md`. If a feature is not directly supported there, update the plan before implementing it.
 
-Relevant sind besonders:
+The most important sections are:
 
-- Abschnitt 2: Produktprinzip
-- Abschnitt 3: Harte Produktgrenzen
-- Abschnitt 8: Backend-Architektur
-- Abschnitt 9: Sicherheits- und UX-Regeln
-- Abschnitt 12: Ausdruecklich nicht bauen
+- product definition and feature test
+- first product goal
+- runtime strategy
+- architecture boundaries
+- safety and UX rules
+- explicit non-goals
 
-## 2. Git/GitHub-Versionskontroll-Gate
+## 2. Git/GitHub Source-Control Gate
 
-Jedes neue Feature muss diese Frage bestehen:
+Every new feature must answer yes to this question:
 
-Hilft es direkt beim Anzeigen, Pruefen oder Ausfuehren eines Git/GitHub-Versionskontrollschritts?
+> Does it directly help a user view, review, or execute a Git/GitHub version-control step?
 
-Wenn die Antwort nein ist, gehoert das Feature nicht in Source Companion. Das Produkt bleibt eine dedizierte Git/GitHub-Oberflaeche und kein allgemeines Entwickler-Cockpit.
+If not, it does not belong in Source Companion.
 
-## 3. Nicht-Ziele
+## 3. Non-Goals
 
-Diese Funktionen sind fuer das erste Produktziel ausgeschlossen:
+Excluded from the first product goal:
 
-- Code-Editor oder Datei-Bearbeitung
-- Terminal oder freie Shell-Kommandos
-- Agent, Agent Runner oder AI Chat
-- Workspaces
-- Projektbaum
-- Plugin-System oder App-Framework
-- Task Runner, Test Runner oder Build Runner
-- Projektmanagement, Issue Board, Kanban oder Notifications-Zentrale
-- Wiki, Discussions oder Actions-Dashboard Deluxe
-- GitLab, Bitbucket oder generische Forge-Abstraktion
-- eigenes SSH-Key-Management
-- Force Push
-- Rebase, interaktives Rebase, History-Rewrite-Wizard oder komplexes Cherry-Pick-UI
+- code editor or file editing
+- terminal or free shell commands
+- agent, agent runner, or AI chat
+- workspaces
+- project tree
+- plugin system or app framework
+- task runner, test runner, or build runner
+- project management, issue board, Kanban, or notification center
+- wiki, discussions, workflow control, or Actions dashboard
+- GitLab, Bitbucket, or generic forge abstraction
+- custom SSH-key management
+- force push
+- rebase, interactive rebase, history-rewrite wizard, or complex cherry-pick UI
 
-## 4. Backend-Scope-Gate
+## 4. Backend Scope Gate
 
-Backend-Komponenten bleiben auf Source-Control-Funktionen begrenzt:
+Backend components stay limited to source-control capabilities:
 
 - Git CLI Wrapper
-- GitHub API Client
-- Dateiwatcher
-- lokaler State Store
-- Auth/Token-Verwaltung
+- Git Operation Queue
+- repository status watcher
+- local state store for non-sensitive data
+- GitHub API client
+- auth and token management
+- Tauri desktop bridge/native dialogs
 
-Keine UI darf freie Shell-Kommandos ausloesen. Git-Kommandos laufen ueber whitelisted, strukturierte Wrapper mit getrenntem stdout, stderr, Exit-Code und lesbaren Fehlern.
+No UI may trigger free shell commands. Git commands must run through whitelisted structured wrappers with separated stdout, stderr, exit code, and readable errors.
 
-## 5. Sicherheits-Gate
+## 5. Safety Gate
 
-Gefaehrliche Aktionen brauchen eine erkennbare Warnung oder Bestaetigung, insbesondere:
+Risky actions require visible warning or confirmation:
 
-- Discard
-- Amend
-- Branch loeschen
-- Merge bei uncommitted changes oder vorhandenen Konflikten
-- Remote ueberschreiben
-- Public Publish
+- discard
+- amend
+- branch delete
+- merge when local changes or conflicts are present
+- remote overwrite
+- public publish
 
-Source Companion fuehrt keine versteckten Automatismen aus: kein Auto-Commit, kein Auto-Push, kein Auto-Publish und kein stilles Loeschen oder Ueberschreiben.
+Source Companion does not perform hidden automation: no auto-commit, auto-push, auto-publish, silent delete, silent overwrite, or silent force push.
 
-## 6. Merge/Rebase-Gate
+## 6. Merge/Rebase Gate
 
-Merge ist fuer das erste Produktziel nur als kontrollierte Basisfunktion erlaubt: aktueller Branch plus ausgewaehlter Ziel-Branch, sichtbarer Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output.
+Merge is allowed only as a controlled basic action: merge the current branch with a selected target branch, show progress, success, Git errors, conflict state, and Git Output.
 
-Rebase und andere History-Rewrites bleiben ausserhalb des ersten Produktziels. Sie duerfen nicht indirekt ueber Sync, Pull, Push oder More-Menu-Aktionen angeboten werden.
+Rebase and other history rewrites are outside the first product goal. They must not appear indirectly through Sync, Pull, Push, or More menu actions.

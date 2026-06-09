@@ -1,133 +1,126 @@
 # Floating Window Concept
 
-Stand: 2026-06-09
+As of 2026-06-09, the Floating Window is the compact desktop mode for the active repository context.
 
-## Entscheidung
+## Decision
 
-Das Floating Window ist der kompakte Desktop-Modus fuer den aktiven Repository-Kontext. Es zeigt nur die wichtigsten Source-Control-Informationen und startet nur kurze, eindeutig sichtbare Git-Aktionen. Fuer Diff-Pruefung, Datei-/Hunk-Staging, Branch-Verwaltung, Stash, GitHub PRs, Checks, Review-Kommentare und detaillierten Git Output fuehrt es in die Full UI.
+The Floating Window shows only the most important source-control state and starts only short, explicit Git actions. It is not a second app, a second repository store, or an independent Git executor.
 
-Floating Window und Full UI nutzen denselben Repository-State, dieselbe Git Operation Queue und denselben Git Output. Es gibt keinen zweiten Repository-Store und keine eigenstaendige Git-Ausfuehrung im Floating Window.
+For diff review, file/hunk staging, discard, amend, branch management, stash, publish, GitHub login/logout, PRs, checks, review comments, history, and detailed Git Output, it sends the user to the Full UI with the same active repository context.
+
+Floating Window and Full UI share:
+
+- repository context
+- tab state
+- Git Operation Queue
+- repository watchers
+- Git Output
+- desktop bridge
+- structured errors
 
 ## Layout
 
-Das Fenster bleibt einspaltig und dicht:
+The window is compact and single-column:
 
-- Kopfzeile mit Repository-Name, Branch und Sync-Status.
-- Change-Zeile mit Zaehlern fuer Changed, Staged, Untracked und Conflicts.
-- Commit-Bereich mit kompakter Commit-Message-Eingabe und Primaeraktion.
-- Aktionsleiste fuer Commit, Commit and Push, Push und Pull/Sync.
-- Statuszeile fuer laufende Operationen, letzte erfolgreiche Aktion oder lesbaren Fehler.
-- Full-UI-Schaltflaeche fuer alle detaillierten Ansichten.
+- header with repository name, branch, upstream, and sync state
+- change row with counts for Changed, Staged, Untracked, and Conflicts
+- compact commit-message field
+- action row for Commit, Commit and Push, Push, Pull/Sync, and Refresh
+- status row for running operation, last success, or readable error
+- Open Full UI action
 
-Das Fenster zeigt keine Sidebar, keine Datei-Liste, keinen Diff, keinen Graph, keinen Projektbaum und kein Terminal. Wenn mehr Detail noetig ist, oeffnet die Aktion die Full UI mit dem gleichen aktiven Repository-Kontext.
+It does not show a sidebar, file list, diff, graph, project tree, terminal, dashboard, or task runner.
 
-## Sichtbare Felder
+## Visible Fields
 
-Pflichtfelder:
+Required:
 
-- Repository-Anzeigename
-- aktueller Branch
-- Upstream oder Hinweis "no upstream"
-- ahead/behind-Zaehler, sofern bekannt
-- Sync-Zustand: clean, local changes, ahead, behind, diverged, conflict oder unknown
-- Change-Zaehler fuer staged, unstaged, untracked und conflicted Dateien
-- Commit-Message
-- laufende Operation oder letzter Fehler
+- repository display name
+- current branch
+- upstream or a no-upstream state
+- ahead/behind counters when known
+- sync state: clean, local changes, ahead, behind, diverged, conflict, or unknown
+- staged, unstaged, untracked, and conflicted file counts
+- commit message
+- current operation or last error
 
-Optionale Felder:
+Optional:
 
-- gekuerzter Repository-Pfad im Tooltip oder Sekundaertext
-- GitHub-Remote-Hinweis, wenn der aktive Kontext eine erkannte GitHub-Zuordnung hat
-- letzter erfolgreicher Commit-/Push-Zeitpunkt aus dem lokalen Operation-Snapshot
+- shortened repository path as secondary text or tooltip
+- GitHub remote indicator when the active context has a GitHub link
+- last successful commit/push timestamp from the local operation snapshot
 
-Nicht sichtbar:
+Never visible:
 
-- Token-Werte
-- rohe Git-Argumente
-- vollstaendige Dateipfade aller Changes
-- GitHub-Dashboarddaten ausserhalb der PR-/Versionskontrollflaeche der Full UI
+- token values
+- raw Git arguments
+- full list of changed file paths
+- GitHub dashboard data outside the source-control surface
 
-## Erlaubte Aktionen
+## Direct Actions
 
-Direkt im Floating Window erlaubt:
+Allowed directly in the Floating Window:
 
-- Refresh: laedt den Repository-State ueber den bestehenden Watcher-/Refresh-Pfad.
-- Commit: erstellt einen normalen Commit aus staged changes mit der eingegebenen Message.
-- Commit and Push: fuehrt Commit und anschliessend Push nur nach expliziter Auswahl aus; beide Schritte bleiben als Queue-/Git-Output-Eintraege sichtbar.
-- Push: pusht den aktuellen Branch ohne Force-Push.
-- Pull/Sync: startet den bestehenden Pull-/Sync-Flow fuer den aktiven Branch.
-- Open Full UI: fokussiert oder oeffnet die Full UI fuer denselben Repository-Kontext.
+- Refresh: reloads state through the existing watcher/refresh path.
+- Commit: runs the normal commit action for staged changes and the entered message.
+- Commit and Push: runs commit and then push only after explicit user selection; both steps remain visible through queue/Git Output state.
+- Push: pushes the current branch without force push.
+- Pull/Sync: starts the existing pull/sync flow for the active branch.
+- Open Full UI: opens or focuses the Full UI for the same repository context.
 
-Nur ueber Full UI erlaubt:
+Allowed only through the Full UI:
 
-- Datei- und Hunk-Staging
-- Discard
-- Amend
-- Branch erstellen, wechseln oder loeschen
-- Stash-Aktionen
-- Publish
-- GitHub Login/Logout
-- PR-Erstellung, PR-Checks und Review-Kommentare
-- Diff- und History-Ansichten
-- detaillierter Git Output
+- file and hunk staging
+- discard
+- amend
+- branch create/switch/delete
+- stash actions
+- publish
+- GitHub login/logout
+- PR creation, checks, and review comments
+- diff and history views
+- detailed Git Output
 
-Ausgeschlossen:
+Excluded:
 
-- Terminal oder freier Command Runner
-- Projektbaum oder Datei-Bearbeitung
-- Dashboard, Task Runner oder Notifications-Zentrale
-- Force Push
-- automatischer Commit, Push oder Publish ohne explizite Nutzeraktion
+- terminal or free command runner
+- project tree or file editing
+- dashboard, task runner, or notification center
+- force push
+- automatic commit, push, publish, or destructive action without explicit user choice
 
-## Fehler- und Busy-Zustaende
+## Busy And Error States
 
-Das Floating Window zeigt genau einen primaeren Status:
+The Floating Window shows one primary status:
 
-- `idle`: keine laufende Operation; Aktionen richten sich nach aktuellem Repository-State.
-- `refreshing`: Status wird geladen; schreibende Aktionen bleiben verfuegbar nur, wenn keine Queue-Operation im Repository laeuft.
-- `running`: eine Git-Operation laeuft; weitere schreibende Aktionen sind fuer diesen Repository-Kontext deaktiviert.
-- `blocked`: Konflikte, fehlender Upstream, fehlende Commit-Message, leeres Staging oder ungueltiger Repository-Pfad verhindern die Aktion.
-- `error`: die letzte Aktion ist fehlgeschlagen; kurze Fehlererklaerung wird angezeigt, Details liegen im Git Output der Full UI.
+- `idle`: no running operation; actions follow current repository state.
+- `refreshing`: status is loading; write actions remain available only when no repository queue operation is running.
+- `running`: a Git operation is running; additional write actions for that repository are disabled.
+- `blocked`: conflicts, missing upstream, missing commit message, empty staging, or invalid path prevents the requested action.
+- `error`: the last action failed; the short error appears in the Floating Window and details remain in Full UI Git Output.
 
-Fehlertexte muessen handlungsnah sein:
+Expected messages:
 
-- fehlende Commit-Message: "Enter a commit message."
-- leeres Staging fuer Commit: "Stage changes before committing."
-- fehlender Upstream fuer Push/Pull: "Set an upstream branch in the Full UI."
-- Konfliktzustand: "Resolve conflicts in the Full UI."
-- verschwundener Pfad: "Repository path is no longer available."
-- Git-Fehler: normalisierte Fehlermeldung aus dem bestehenden Fehlervertrag.
+- missing commit message: `Enter a commit message.`
+- empty staging: `Stage changes before committing.`
+- missing upstream: `Set an upstream branch in the Full UI.`
+- conflict state: `Resolve conflicts in the Full UI.`
+- missing path: `Repository path is no longer available.`
 
-## Warnungsweiterleitung
+## Warning Forwarding
 
-Gefaehrliche Aktionen laufen nicht direkt im Floating Window, wenn sie eine bestaetigte Warnung brauchen. Das betrifft Discard, Amend, Branch loeschen, Remote ueberschreiben und Public Publish.
+Risky actions that require confirmation do not run directly in the Floating Window. This includes discard, amend, branch delete, remote overwrite, and public publish.
 
-Wenn der Nutzer einen Zustand erreicht, der eine solche Aktion nahelegt, zeigt das Floating Window nur einen knappen Hinweis und eine Full-UI-Aktion. Die bestaetigte Warnung und die eigentliche Ausfuehrung bleiben in der Full UI.
+If the compact mode reaches a state where one of those actions is relevant, it shows a short hint and an Open Full UI action. The confirmation and execution stay in the Full UI.
 
-## Fokusverhalten
+## Focus Behavior
 
-Beim Start zeigt das Floating Window den zuletzt aktiven Repository-Kontext, falls dieser noch gueltig ist. Gibt es keinen aktiven Kontext, zeigt es einen leeren Zustand mit "Open Full UI".
+On launch, the Floating Window shows the last active repository context when it is still valid. If there is no active context, it shows an empty state with Open Full UI.
 
-Fokusregeln:
+Focus rules:
 
-- Commit-Message erhaelt Fokus, wenn staged changes vorhanden sind und keine Operation laeuft.
-- Nach erfolgreichem Commit bleibt der Fokus im Commit-Feld, damit ein weiterer kleiner Commit vorbereitet werden kann.
-- Nach Commit and Push, Push oder Pull/Sync wandert der Fokus auf die Statuszeile, damit Erfolg oder Fehler wahrnehmbar ist.
-- Bei Fehlern wird die Statuszeile fokussierbar; Enter auf "Open Full UI" oeffnet den betroffenen Kontext mit Git Output sichtbar.
-- Umschalten zur Full UI behaelt aktiven Tab, Repository-Kontext, Queue-Snapshot und Fehlerzustand bei.
-
-## Gemeinsame State- und Queue-Nutzung
-
-Das Floating Window liest ausschliesslich aus dem bestehenden Repository-Kontextmodell:
-
-- Repository-ID
-- Pfad und Anzeigename
-- Branch, Upstream, ahead/behind
-- Change-Buckets
-- Konflikt- und Fehlerzustand
-- laufende und queued Operationen
-- letzter Git Output Snapshot
-
-Aktionen werden ueber dieselbe Desktop-Bridge und dieselbe `GitOperationQueue` gestartet wie in der Full UI. Pro Repository bleibt dadurch nur eine schreibende Git-Operation gleichzeitig moeglich. Watcher-Refreshes nutzen den bestehenden entprellten Refresh-Pfad und duerfen laufende Nutzeraktionen nicht ueberholen.
-
-Das Floating Window speichert nur lokale UI-Praeferenzen wie Fensterposition, Groesse und letzter Modus. Es speichert keine Tokens, keine GitHub-Antworten, keine Repository-Duplikate und keine abgeleiteten Git-Argumente.
+- Focus the commit-message field when staged changes exist and no operation is running.
+- After a successful commit, keep focus in the commit field so another small commit can be prepared.
+- After commit and push, push, or pull/sync, move focus to the status row so success or failure is noticed.
+- On error, make the status row focusable and let Enter on Open Full UI open the affected context with Git Output visible.
+- Switching to Full UI preserves active tab, repository context, queue snapshot, commit message, and error state.

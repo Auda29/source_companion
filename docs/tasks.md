@@ -568,12 +568,13 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 
 ### T57 - Dokumentation aktualisieren und auf Englisch konsolidieren
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T24`, `T33`, `T48`, `T49`, `T56`, `T45`, `T36`
 - Definition of Done: `README.md` und zentrale Dokumentation sind auf den aktuellen Produkt- und Implementierungsstand gebracht und konsistent auf Englisch formuliert; beschrieben sind Web-Prototyp, Tauri-Desktop-Ziel, Full UI, Floating Window, Git/GitHub-Funktionsumfang, Scope-Grenzen, Setup/Start, Teststrategie und bekannte Einschraenkungen.
 - Implementierungsnotiz: Vor allem `README.md`, `docs/architecture.md`, `docs/plan.md`, Desktop-Dokumente und relevante Checklisten pruefen. Deutsche Planungsnotizen duerfen als historische Arbeitsnotizen bestehen bleiben, aber nutzernahe Dokumentation soll Englisch sein. Keine Produktfeatures bei der Dokumentationsarbeit neu erfinden.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 umgesetzt: `README.md`, Produktplan, Architektur, Scope-Gates, Desktop-Shell-/Runtime-/Bridge-Dokumente, Floating-Window-Konzept, Desktop-Paritaetscheckliste, Core-Flow-Review-Checkliste und GitHub-Auth-Entscheidung wurden auf Englisch konsolidiert und auf den aktuellen Web-/Tauri-/Full-UI-/Floating-Window-Stand gebracht. Setup, Teststrategie und bekannte Cargo/Tauri-Einschraenkungen sind dokumentiert; historische Arbeitsnotizen bleiben unveraendert.
+- Review-Ergebnis: Bestanden am 2026-06-09. `README.md` und zentrale Produkt-/Architektur-/Desktop-Dokumente sind auf Englisch konsolidiert und decken Web-Prototyp, Tauri-Desktop-Ziel, Full UI, Floating Window, Git/GitHub-Funktionsumfang, Scope-Grenzen, Setup/Start, Teststrategie und bekannte Cargo/Tauri-Einschraenkungen ab. Die vollstaendige Node-Test-Suite bestand mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` in dieser Umgebung nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T59 - GitHub Actions CI fuer Tests und Builds einrichten

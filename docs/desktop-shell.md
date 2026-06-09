@@ -1,26 +1,58 @@
-# Source Companion - Desktop Shell
+# Source Companion Desktop Shell
 
-Stand: 2026-06-09
+As of 2026-06-09, the desktop shell packages the existing Full UI in a local Tauri window and exposes only controlled source-control bridge commands.
 
-## Ziel
+## Goal
 
-Die Tauri-Shell startet die bestehende Full UI in einem lokalen Desktop-Fenster. Der kontrollierte Repository-Bridge-Vertrag fuer Git- und Repository-State-Aktionen ist in `docs/desktop-bridge.md` beschrieben; native Dialoge, Desktop-Watcher und GitHub-Auth folgen in den naechsten Desktop-Tasks.
+The desktop app gives the reusable web UI the local capabilities it needs:
 
-## Startpunkte
+- local repository access
+- Git CLI execution through the existing wrapper and operation queue
+- native folder dialogs for open, clone, and publish flows
+- repository status watchers
+- backend-only GitHub auth and secure token storage
+- Full UI and Floating Window modes backed by the same repository state
 
-- `npm install` installiert die Tauri CLI fuer lokale Desktop-Laeufe.
-- `npm run desktop:assets` kopiert `index.html` und `src/` nach `desktop-dist/`.
-- `npm run desktop:dev` startet die Tauri-Entwicklungsansicht und fuehrt vorher den Asset-Kopiervorgang aus.
-- `npm run desktop:build` baut das Desktop-Bundle und fuehrt vorher den Asset-Kopiervorgang aus.
+The shell does not add a terminal, editor, project tree, task runner, dashboard, or free command surface.
 
-## Asset-Grenze
+## Entry Points
 
-`src-tauri/tauri.conf.json` verweist auf `../desktop-dist` statt auf das Repository-Root. Dadurch werden nur die vorhandene Full-UI-Startdatei und ihre `src/`-Assets eingebettet; Dokumentation, Tests, Git-Daten und Tauri-Quellen werden nicht als Frontend-Assets ausgeliefert.
+Install dependencies:
 
-## Security-Konfiguration
+```powershell
+npm install
+```
 
-Der Renderer laeuft als Tauri-Webview ohne Node-Zugriff. Die aktuelle Capability erlaubt nur `core:default` fuer das Hauptfenster und keine Shell-, Dateisystem- oder Command-Plugins. Die Content-Security-Policy ist auf eigene Assets und die bereits vorhandenen GitHub-HTTP-Ziele begrenzt.
+Copy the web assets into the desktop asset directory:
 
-## Erwartete UI-Zustaende
+```powershell
+npm run desktop:assets
+```
 
-Da die Shell dieselbe `index.html` und dieselben `src/`-Dateien nutzt, bleiben die bestehenden leeren und fehlerhaften Startzustaende der Full UI sichtbar. Native Dialoge, Desktop-Watcher und GitHub-Auth sind bewusst noch nicht Teil dieser Shell.
+Run the Tauri development app:
+
+```powershell
+npm run desktop:dev
+```
+
+Build the desktop bundle:
+
+```powershell
+npm run desktop:build
+```
+
+`desktop:dev` and `desktop:build` require Rust/Cargo and the Tauri platform prerequisites.
+
+## Asset Boundary
+
+`src-tauri/tauri.conf.json` points at `../desktop-dist`. The asset copy step includes the current Full UI entry point and `src/` assets. Documentation, tests, Git data, and Tauri source files are not shipped as frontend assets.
+
+## Security Configuration
+
+The renderer runs as a Tauri webview without Node access. The current capability is restricted to the main window and does not grant shell, filesystem, or arbitrary command plugins. Network policy is limited to the app's own assets and the GitHub HTTP targets already needed by the product.
+
+## UI States
+
+The desktop shell uses the same `index.html` and `src/` files as the web prototype, so the empty, invalid path, non-Git folder, repository, busy, conflict, and error states stay consistent.
+
+Desktop-specific execution is routed through the bridge documented in `docs/desktop-bridge.md`.

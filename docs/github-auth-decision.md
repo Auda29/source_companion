@@ -1,109 +1,105 @@
-# Source Companion - GitHub Auth Decision
+# Source Companion GitHub Auth Decision
 
-Stand: 2026-06-03
+As of 2026-06-09, Source Companion uses a GitHub OAuth Device Authorization Flow for the desktop target, coordinated by the Tauri/backend layer.
 
-## Entscheidung
+## Decision
 
-Source Companion nutzt fuer das Desktop-Ziel einen GitHub OAuth Device Authorization Flow, koordiniert durch die Tauri-Backend-Schicht.
+The renderer starts login only through an allowed bridge command. The backend requests a device code from GitHub, returns only user-facing login metadata to the UI, and polls for the access token backend-internally.
 
-Der Renderer startet Login nur ueber einen erlaubten Bridge-Command. Die native Schicht fordert bei GitHub einen Device Code an, zeigt der UI nur User Code, Verification URL und Ablaufzeit und oeffnet optional den Systembrowser. Das Polling auf den Access Token laeuft ausschliesslich im Backend.
+Tokens are not stored in the renderer, `localStorage`, `sessionStorage`, IndexedDB, the local state store, repository contexts, Git remotes, Git URLs, Git command arguments, or Git Output.
 
-Tokens werden nicht im Renderer, nicht in `localStorage`, nicht im lokalen State Store, nicht in Git-Remote-URLs und nicht in Git-Command-Argumenten gespeichert.
+## Rationale
 
-## Begruendung
+- Device Flow fits a local desktop app without an embedded redirect server.
+- Token exchange stays inside the desktop bridge boundary.
+- Users can authenticate in the system browser.
+- The reusable web UI can show auth status without receiving secrets.
+- HTTPS remains the preferred GitHub clone/publish path; SSH URLs are allowed only when the local Git/SSH setup already works.
 
-- Der Device Flow passt zu einer lokalen Desktop-App ohne eingebauten Browser-Redirect-Server.
-- Der Token-Austausch bleibt in der Tauri-Backend-Grenze.
-- Login funktioniert auch, wenn der Nutzer GitHub im Systembrowser authentifiziert.
-- Die bestehende Web-UI kann denselben Login-Zustand anzeigen, ohne Zugriff auf das Secret zu erhalten.
-- HTTPS bleibt fuer GitHub-Clone/Publish priorisiert; SSH wird nur genutzt, wenn das lokale Git/SSH-Setup bereits funktioniert.
+## Required Scopes
 
-## Erforderliche Scopes
+The first product goal requests:
 
-Fuer das erste Produktziel werden diese Scopes angefordert:
+- `repo`: read/create private and public repositories, support clone/publish, and access PR/check/review context for repository workflows.
+- `read:user`: show login identity and associate auth status with a user.
 
-- `repo`: private und public Repositories lesen, erstellen, klonen/pushen, PRs und Checks fuer Repository-Kontexte lesen oder erstellen.
-- `read:user`: Login-Identitaet anzeigen und Auth-Status einem Nutzer zuordnen.
+Not requested:
 
-Nicht angefordert:
+- `workflow`
+- admin, org, or enterprise scopes
+- scopes for issues, discussions, wiki, notifications, or project management as product domains
 
-- `workflow`, weil Source Companion Workflows nicht steuert.
-- Admin-, Org- oder Enterprise-Scopes.
-- Scopes fuer Issues, Discussions, Wiki oder Notifications als eigene Produktdomaene.
+If GitHub later offers a stable narrower scope set for the needed source-control actions, `repo` can be replaced after a documented review.
 
-Wenn GitHub spaeter eine feinere Scope-Variante fuer die benoetigten Version-Control-Aktionen stabil anbietet, darf `repo` durch diese engere Variante ersetzt werden. Bis dahin ist `repo` die explizite Startentscheidung, weil private Clone-, Publish-, PR- und Check-Flows sonst nicht konsistent funktionieren.
+## Login Flow
 
-## Login-Ablauf
+1. UI calls the desktop bridge to start device login.
+2. Backend requests device code, user code, verification URL, expiration, and polling interval.
+3. UI shows user code, URL, expiration, and login status.
+4. Backend may open the system browser to the verification URL.
+5. Backend polls at GitHub's interval.
+6. `authorization_pending` remains a visible waiting state.
+7. `slow_down` increases the interval and is not treated as a final error.
+8. Expiration, denied access, network errors, and API errors end login with structured errors.
+9. On success, backend validates token, user, and scopes.
+10. Only after validation does backend store the token in secure storage.
 
-1. UI ruft `githubAuth.startDeviceLogin` ueber die Tauri-Bridge auf.
-2. Backend fordert Device Code, User Code, Verification URL, Ablaufzeit und Polling-Intervall an.
-3. UI zeigt User Code, Ziel-URL, Ablaufzeit und Login-Status.
-4. Backend oeffnet auf Wunsch den Systembrowser mit der Verification URL.
-5. Backend pollt mit dem von GitHub gelieferten Intervall.
-6. `authorization_pending` bleibt ein sichtbarer Wartestatus.
-7. `slow_down` erhoeht das Polling-Intervall und wird nicht als finaler Fehler angezeigt.
-8. `expired_token`, abgelehnter Zugriff oder Netzwerk-/API-Fehler beenden den Login mit strukturiertem Fehler.
-9. Nach Erfolg validiert das Backend Token, Nutzer und Scopes.
-10. Erst nach erfolgreicher Scope-Pruefung speichert das Backend das Token im sicheren Speicher.
+Canceling login stops polling and stores no token.
 
-Die UI darf den Login abbrechen. Abbruch stoppt das Backend-Polling und speichert kein Token.
+## Secure Token Storage
 
-## Sichere Token-Speicherung
+Tokens are stored through a backend `SecureTokenStore` abstraction over OS credential storage:
 
-Die konkrete Speicherentscheidung ist eine Tauri-Backend-Abstraktion ueber den Betriebssystem-Credential-Store:
+- Windows Credential Manager
+- macOS Keychain
+- Linux Secret Service/libsecret
 
-- Windows: Windows Credential Manager.
-- macOS: Keychain.
-- Linux: Secret Service/libsecret, falls verfuegbar.
+Stored secret:
 
-Die Rust-Seite kapselt diese Speicherung als `SecureTokenStore`, zunaechst mit einem Keychain-/Credential-Store-Adapter. Der Adapter speichert:
+- service: `Source Companion`
+- account key: `github.com:<login>`
+- secret: GitHub access token
 
-- Service: `Source Companion`.
-- Account-Key: `github.com:<login>`.
-- Secret: GitHub Access Token.
+Non-sensitive metadata may be stored separately:
 
-Nicht-sensitive Metadaten duerfen separat im lokalen State Store liegen:
+- GitHub login
+- token source `device-flow`
+- detected scopes
+- last validation time
 
-- GitHub Login.
-- Token-Quelle `device-flow`.
-- erkannte Scopes.
-- Zeitpunkt der letzten Validierung.
+If secure storage is unavailable, the app reports `secure-storage-unavailable` and does not allow persistent login. A development-only in-memory token may exist for the current runtime, but it must be visibly non-persistent.
 
-Der lokale State Store enthaelt niemals das Token selbst.
+## HTTPS Git Behavior
 
-Wenn der sichere Speicher nicht verfuegbar ist, meldet die App `secure-storage-unavailable` und laesst keinen dauerhaften Login zu. Ein optionaler Entwicklungsmodus darf nur einen in-memory Token fuer die aktuelle Laufzeit halten und muss in der UI als nicht persistiert erkennbar sein.
+GitHub API calls use the token only in the backend.
 
-## HTTPS-Git-Verhalten
+For HTTPS clone, push, and publish:
 
-GitHub-API-Aufrufe nutzen das Token nur im Backend.
+- prefer the user's local Git Credential Manager setup
+- never write a token into remote URLs
+- never pass a token as a Git CLI argument
+- if a backend-only credential/askpass flow is later needed, keep it short-lived and remove it after the Git operation
 
-Fuer HTTPS-Clone, Push und Publish gilt:
+SSH URLs remain accepted, but Source Companion does not manage SSH keys. SSH failures should point to the local Git/SSH setup.
 
-- bevorzugt wird das vorhandene lokale Git Credential Manager Setup;
-- ein Token wird nie in Remote-URLs geschrieben;
-- ein Token wird nie als Git-CLI-Argument uebergeben;
-- falls ein backend-only Credential-/Askpass-Flow noetig wird, darf er das Token nur kurzlebig im Backend-Prozess bereitstellen und muss nach der Git-Operation entfernt werden.
+## Logout And Revocation
 
-SSH-URLs bleiben erlaubt, aber Source Companion baut kein eigenes SSH-Key-Management. SSH-Fehler verweisen auf das lokale Git/SSH-Setup.
+Logout:
 
-## Logout und Revocation
+- deletes the token from the OS credential store
+- clears in-memory token and auth state
+- updates repository contexts to unauthenticated GitHub state
+- returns GitHub actions to the no-token state
 
-Logout bedeutet:
+Logout does not change Git repositories and does not remove remotes.
 
-- Token aus dem Betriebssystem-Credential-Store loeschen.
-- In-memory Token und Auth-Status loeschen.
-- Repository-Kontexte auf `github.authenticated = false` aktualisieren.
-- GitHub-spezifische Aktionen in den no-token Zustand zuruecksetzen.
+Token revocation is a separate explicit action if supported by the OAuth app and GitHub API. If revocation fails, local logout still completes and the UI shows the revocation error as an additional note.
 
-Logout fuehrt keine Git-Aenderung aus und entfernt keine Remotes.
+Externally revoked tokens are detected on the next GitHub API validation, after which local auth state is cleared and login is offered again.
 
-Token-Revocation ist eine separate, explizite Aktion, falls die OAuth-App-Konfiguration und GitHub API dies fuer das gespeicherte Token erlauben. Wenn Revocation fehlschlaegt, wird der lokale Logout trotzdem abgeschlossen und die UI zeigt den Revocation-Fehler als Zusatzhinweis.
+## No-Token State
 
-Wenn ein Token extern widerrufen wurde, erkennt die naechste GitHub-API-Validierung den Fehler, loescht den lokalen Auth-Status und fordert erneutes Login an.
-
-## No-Token Zustand
-
-Ohne gueltiges Token liefert der Auth-Status:
+Without a valid token, auth status is:
 
 ```js
 {
@@ -115,11 +111,11 @@ Ohne gueltiges Token liefert der Auth-Status:
 }
 ```
 
-GitHub-Aktionen bleiben sichtbar, aber nicht still ausfuehrbar. Clone per URL bleibt ohne GitHub Login moeglich. Clone from GitHub, Publish to GitHub, PR-Erstellung, PR-Status, Checks und Review-Kommentare zeigen eine Login-Aufforderung mit Fehlerkategorie `github-auth-missing`.
+GitHub actions remain visible but not silently executable. URL clone remains available without GitHub login. Clone from GitHub, Publish to GitHub, PR creation/status, checks, and review comments show a login prompt with `github-auth-missing`.
 
-## Fehlervertrag
+## Error Contract
 
-GitHub-Auth- und API-Fehler folgen dem allgemeinen Backend-Fehlervertrag aus `docs/architecture.md` und ergaenzen GitHub-spezifische Felder:
+GitHub auth/API errors follow the general backend error contract and may add GitHub-specific fields:
 
 ```js
 {
@@ -134,44 +130,25 @@ GitHub-Auth- und API-Fehler folgen dem allgemeinen Backend-Fehlervertrag aus `do
 }
 ```
 
-### Fehlerkategorien
+Error kinds:
 
-| Kind | Bedeutung | UI-Verhalten |
+| Kind | Meaning | UI behavior |
 | --- | --- | --- |
-| `github-auth-missing` | Kein Token vorhanden. | Login-Aktion anzeigen; GitHub-Aktion nicht ausfuehren. |
-| `github-token-invalid` | Token wurde widerrufen, ist ungueltig oder GitHub meldet Bad Credentials. | Lokalen Auth-Status loeschen und erneutes Login anbieten. |
-| `github-scope-missing` | Token hat nicht alle benoetigten Scopes. | Benoetigte und vorhandene Scopes anzeigen; erneutes Login anbieten. |
-| `github-rate-limit` | Primaeres Rate Limit erreicht. | Reset-Zeit anzeigen; Retry erst nach Reset empfehlen. |
-| `github-secondary-rate-limit` | Sekundaeres Abuse-/Burst-Limit erreicht. | Aktion pausieren; Retry-Hinweis aus Headern anzeigen, falls vorhanden. |
-| `github-network-error` | DNS, TLS, Offline oder Timeout. | Netzwerkfehler lesbar anzeigen; keine Token-Loeschung. |
-| `github-api-error` | GitHub liefert einen sonstigen API-Fehler mit Statuscode. | GitHub-Message und Statuscode anzeigen. |
-| `github-login-expired` | Device Code ist abgelaufen. | Login neu starten lassen. |
-| `github-login-cancelled` | Nutzer oder Backend hat Login abgebrochen. | Neutralen Abbruchstatus anzeigen. |
-| `secure-storage-unavailable` | Betriebssystem-Credential-Store ist nicht verfuegbar. | Dauerhaften Login blockieren; keine unsichere Persistenz nutzen. |
+| `github-auth-missing` | No token is available. | Show login action; do not run the GitHub action. |
+| `github-token-invalid` | Token was revoked, invalid, or rejected by GitHub. | Clear local auth state and offer login. |
+| `github-scope-missing` | Token lacks required scopes. | Show required/granted scopes and offer login. |
+| `github-rate-limit` | Primary rate limit reached. | Show reset time and defer retry. |
+| `github-secondary-rate-limit` | Secondary abuse/burst limit reached. | Pause action and show retry guidance when available. |
+| `github-network-error` | DNS, TLS, offline, or timeout. | Show network error without clearing token. |
+| `github-api-error` | Other GitHub API error. | Show GitHub message and status code. |
+| `github-login-expired` | Device code expired. | Let the user restart login. |
+| `github-login-cancelled` | User/backend canceled login. | Show neutral canceled state. |
+| `secure-storage-unavailable` | OS credential store is unavailable. | Block persistent login. |
 
-Rate-Limit-Antworten muessen, soweit vorhanden, `limit`, `remaining`, `resetAt` und `retryAfterSeconds` enthalten. Netzwerkfehler duerfen nicht mit fehlender Auth verwechselt werden.
+Rate-limit responses should include `limit`, `remaining`, `resetAt`, and `retryAfterSeconds` when available. Network errors must not be confused with missing auth.
 
-## Web-Prototyp Grenze
+## Web Prototype Boundary
 
-Der Web-Prototyp darf GitHub-Auth nur simulieren oder einen nicht persistierten Entwicklungszustand halten. Verboten sind:
+The web prototype may simulate GitHub auth or hold a non-persistent development state. It must not store tokens in browser storage, URLs, static config, repository contexts, recent repositories, Git remotes, or Git arguments.
 
-- Token in `localStorage`, `sessionStorage` oder IndexedDB.
-- Token in URL-Parametern.
-- Token in statischen Konfigurationsdateien.
-- Token in Repository-Kontexten oder Recent-Repositories.
-- Token in Git-Remote-URLs.
-
-Eine echte persistente GitHub-Anmeldung ist erst in der Desktop-Shell mit `SecureTokenStore` Teil der Implementierung.
-
-## Folgen fuer T38
-
-`T38` implementiert auf dieser Entscheidung nur:
-
-- Device Login starten, Status anzeigen und abbrechen.
-- Logout und optional Revocation ausloesen.
-- Token ueber `SecureTokenStore` lesen/schreiben/loeschen.
-- Auth-Status fuer Repository-Kontexte bereitstellen.
-- User-Repositories laden und durchsuchen.
-- Fehler nach diesem Vertrag normalisieren.
-
-PR-, Check- und Publish-spezifische API-Methoden bleiben in den abhaengigen Tasks.
+Persistent GitHub login is a desktop feature only.

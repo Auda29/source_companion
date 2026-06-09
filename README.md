@@ -1,68 +1,93 @@
 # Source Companion
 
-Source Companion ist eine eigenstaendige, minimalistische Git/GitHub-Oberflaeche im Stil des Cursor- bzw. VS-Code-Source-Control-Panels.
+Source Companion is a focused Git/GitHub source-control UI. It is designed to replace the Git surface of Cursor or VS Code, not the editor, terminal, agent, dashboard, or project tree around it.
 
-Das Ziel ist bewusst eng:
+The product source of truth is [docs/plan.md](docs/plan.md). New features should pass the scope gates in [docs/scope-gates.md](docs/scope-gates.md) before they are planned or implemented.
 
-- kein Editor
-- kein Terminal
-- kein Agent
-- kein Dashboard
-- kein Projektbaum
-- nur Git/GitHub-UI
+## Current Shape
 
-Source Companion soll Cursor nur fuer Git ersetzen.
+The repository contains a reusable web UI prototype and a Tauri desktop target.
 
-## Produktquelle
+- Web prototype: `index.html`, `src/main.js`, and `src/styles.css` provide the Full UI surface for tabs, repository selection, source-control lists, diffs, commits, branches, sync, stash, GitHub clone/publish, PRs, checks, and review comments.
+- Desktop target: Tauri packages the same Full UI assets and exposes only whitelisted bridge commands for local Git, repository state, native folder dialogs, repository watchers, GitHub auth, GitHub metadata, publish, clone, PR, checks, and review context.
+- Floating Window: the compact desktop mode shows the active repository, branch, change counters, status/errors, and short actions for commit, commit and push, push, pull/sync, refresh, and returning to the Full UI.
 
-`docs/plan.md` ist die verbindliche Produktquelle fuer Source Companion. Neue Features muessen am Scope-Gate in `docs/scope-gates.md` gemessen werden, bevor sie in Planung oder Implementierung aufgenommen werden.
+## Product Scope
 
-## Produktziel
+In scope:
 
-Die erste vollstaendige Produktversion soll mehrere Repositories parallel in Tabs oeffnen, Git-Zustand anzeigen, Aenderungen pruefbar machen und normale Git/GitHub-Versionskontrollschritte ausfuehren.
+- opening multiple local repositories in tabs
+- Git status, changed/staged/untracked/conflicted buckets, unified diffs, file actions, and hunk actions
+- commit, commit staged changes, commit and push, and amend with visible warnings
+- branch create/switch/delete, fetch, pull, push, sync, merge, and basic stash actions
+- URL clone, Clone from GitHub, Publish to GitHub, and GitHub repository metadata
+- GitHub auth, PR creation/lookup, checks, review comments, and issue links where they support source-control workflows
+- Git Output and structured errors for Git/GitHub operations
 
-Geplante Kernbereiche:
+Out of scope:
 
-- lokaler Git-Status
-- Changes, Staged, Untracked und Conflicts
-- Datei- und Hunk-Staging
-- Diffs
-- Commit und Amend
-- Branches
-- Fetch, Pull, Push und Sync
-- Stash-Basisfunktionen
-- einklappbarer Graph/History-Bereich
-- GitHub Login
-- Clone from GitHub
-- Publish to GitHub
-- PRs, Checks und Review-Kommentare
+- code editing, file tree navigation, terminal access, free shell commands, task/test/build runners, workspaces, dashboards, agent/chat flows, GitLab/Bitbucket, custom SSH-key management, force push, rebase, and broad GitHub project management.
 
-## Produktgrenzen
+## Setup
 
-Nicht Teil des Produktziels:
+Prerequisites:
 
-- Code-Editor
-- Terminal
-- AI Chat oder Agent-Runner
-- Task-Runner
-- Issue Board oder Kanban
-- Workspaces
-- GitLab/Bitbucket
-- eigenes SSH-Key-Management
-- Force Push
+- Node.js
+- Git
+- Rust/Cargo and the Tauri prerequisites for desktop development
 
-## Planung
+Install dependencies:
 
-- Produktplan: [docs/plan.md](docs/plan.md)
-- Scope-Gates: [docs/scope-gates.md](docs/scope-gates.md)
-- Desktop-Shell: [docs/desktop-shell.md](docs/desktop-shell.md)
-- Aufgabenliste: [docs/tasks.md](docs/tasks.md)
-- Brainstorming: [docs/brainstorm.md](docs/brainstorm.md)
+```powershell
+npm install
+```
 
-## Status
+Prepare desktop assets:
 
-Source Companion befindet sich in der Planungs- und Aufbauphase.
+```powershell
+npm run desktop:assets
+```
+
+Run the desktop shell:
+
+```powershell
+npm run desktop:dev
+```
+
+Build the desktop bundle:
+
+```powershell
+npm run desktop:build
+```
+
+The static web prototype can also be opened directly from `index.html`, but local Git execution, native folder dialogs, persistent GitHub auth, and desktop watchers require the Tauri runtime.
+
+## Testing
+
+The current automated coverage uses Node's built-in test runner. Until a package-level test script is added, run:
+
+```powershell
+$env:NODE_OPTIONS='--preserve-symlinks --preserve-symlinks-main'
+node --test tests/*.test.js
+```
+
+For desktop smoke coverage, see [docs/desktop-full-ui-parity.md](docs/desktop-full-ui-parity.md). Rust format/build and live Tauri checks require a local environment with `cargo`.
+
+## Documentation
+
+- Product plan: [docs/plan.md](docs/plan.md)
+- Scope gates: [docs/scope-gates.md](docs/scope-gates.md)
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Repository context model: [docs/repository-context-model.md](docs/repository-context-model.md)
+- Desktop shell: [docs/desktop-shell.md](docs/desktop-shell.md)
+- Desktop bridge: [docs/desktop-bridge.md](docs/desktop-bridge.md)
+- Floating Window: [docs/floating-window-concept.md](docs/floating-window-concept.md)
+- Desktop parity checklist: [docs/desktop-full-ui-parity.md](docs/desktop-full-ui-parity.md)
+- Core flow review checklist: [docs/core-flow-review-checklist.md](docs/core-flow-review-checklist.md)
+- Task backlog: [docs/Tasks.md](docs/Tasks.md)
+
+Historical planning notes may remain in German. User-facing and architectural documentation should be kept in English going forward.
 
 ## License
 
-MIT License. Siehe [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE).

@@ -1,13 +1,14 @@
 # Desktop Bridge Contract
 
-Die Desktop-Bridge ist die einzige Renderer-Fassade fuer lokale Repository-Aktionen in der Tauri-Laufzeit. Sie bleibt auf Versionskontrolle beschraenkt und bietet keine freie Shell-, Command-Runner-, Token- oder generische Dateisystem-API.
+The Desktop Bridge is the only renderer facade for local repository actions in the Tauri runtime. It is limited to version-control workflows and does not expose a free shell, command runner, token surface, or generic filesystem API.
 
-## Renderer-Fassade
+## Renderer Facade
 
-`src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Clone-, Publish-, Branch-, Sync-, Merge- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist. Tauri-Aufrufe uebergeben Renderer-Anfragen gekapselt als `{ request: ... }`, damit native Handler keine freie Argument- oder Shell-Flaeche erhalten. Native Ordnerdialoge bleiben auf die erlaubten Open-/Clone-/Publish-Flows begrenzt; Watcher-Befehle starten, lesen und stoppen nur Repository-Status-Watcher fuer konkrete Repository-Kontexte.
-Das Umschalten zwischen Floating Window und Full UI nutzt eine eigene native Window-Mode-Methode; Repository-Kontext, Tabs, Queue und Fehler bleiben im bestehenden Renderer-/Worker-State.
+`src/desktop-bridge.js` exports `SourceCompanionDesktopBridge`. `src/main.js` prefers this facade for desktop repository state, diffs, file actions, hunk actions, commit, clone, publish, branch, sync, merge, stash, Git Output, native folder dialogs, watchers, GitHub auth, repositories, PRs, checks, and review context.
 
-Erlaubte Methoden:
+Tauri calls wrap renderer requests as `{ request: ... }` so native handlers do not receive arbitrary argument shapes.
+
+Allowed repository methods:
 
 - `openRepository`
 - `pickRepositoryFolder`
@@ -31,7 +32,7 @@ Erlaubte Methoden:
 - `getRepositoryWatch`
 - `stopRepositoryWatch`
 
-Zugehoerige Tauri-Command-Namen:
+Tauri command names:
 
 - `repository_open`
 - `repository_pick_folder`
@@ -55,25 +56,47 @@ Zugehoerige Tauri-Command-Namen:
 - `repository_watch_get`
 - `repository_watch_stop`
 
-## Backend-Regeln
+## Backend Rules
 
-Die Bridge-Backend-Implementierung delegiert Git-Ausfuehrungen ueber `GitOperationQueue`. Die Queue ruft weiterhin nur den bestehenden `git-cli-wrapper` auf. Dadurch bleiben Whitelist, strukturierte Argumente, Force-Push-Ablehnung, stdout, stderr, Exit-Code und strukturierte Fehler der bestehenden Git-Schicht erhalten.
+The bridge backend delegates Git execution through `GitOperationQueue`, which calls the existing `git-cli-wrapper`. This preserves the command whitelist, structured arguments, force-push rejection, stdout/stderr/exit-code capture, and normalized errors.
 
-`src-tauri/src/lib.rs` registriert fuer jeden erlaubten Tauri-Command einen `#[tauri::command]`-Handler und einen `invoke_handler`. Diese Handler starten einen persistenten `src/desktop-bridge-worker.js`-Prozess mit `--preserve-symlinks` und `--preserve-symlinks-main` und senden JSON-RPC-artige Methoden an `createDesktopBridgeBackend()`. Dadurch bleibt die Queue pro Desktop-Laufzeit erhalten, und Git-Ausfuehrungen laufen weiterhin durch die bestehende JS-Git-Schicht statt durch freie native Commands.
+`src-tauri/src/lib.rs` registers one `#[tauri::command]` handler per allowed command and a matching `invoke_handler`. Those handlers start a persistent `src/desktop-bridge-worker.js` process with `--preserve-symlinks` and `--preserve-symlinks-main`, then send JSON-RPC-like method calls to `createDesktopBridgeBackend()`.
 
-Die drei Ordnerdialog-Commands laufen nativ ueber `tauri-plugin-dialog` und liefern nur `{ ok, canceled, path, error }` zurueck. Sie lesen oder schreiben keine Dateien und geben keine generische Dateisystem-Schnittstelle frei. Der Renderer schreibt den ausgewaehlten Pfad in das jeweilige Open-, Clone- oder Publish-Feld und laesst die bestehenden Validierungen fuer ungueltige oder fehlende Pfade aktiv.
+The persistent worker keeps the queue and watcher state alive for the desktop runtime. It does not provide arbitrary command execution.
 
-`desktop_set_window_mode` ist auf die Werte `floating` und `full` begrenzt. Der Command passt nur Groesse, Mindestgroesse und Always-on-top-Status des bestehenden Hauptfensters an; er startet keine zweite UI-Instanz, erzeugt keine Repository-Duplikate und fuehrt keine Git-Operationen aus. Der Renderer sendet dabei nur den Zielmodus sowie optionale aktive Repository-Metadaten fuer Nachvollziehbarkeit.
+## Native Dialogs
 
-Die Watcher-Commands laufen im persistenten Bridge-Worker. `startRepositoryWatch` erstellt einen `RepositoryStatusWatcher` fuer den Repository-Kontext, `getRepositoryWatch` liefert Snapshot, letzten geladenen Repository-State und letzten Fehler, und `stopRepositoryWatch` schliesst den Handle beim Tab-Schliessen. Refreshes nutzen weiter Debounce, Busy-Deferral und denselben `loadRepositoryState`-Pfad wie die Full UI.
+Folder dialog commands are allowed only for:
 
-`getGitOutput` liefert den Queue-Snapshot fuer den Repository-Kontext. Die UI darf daraus laufende, queued und abgeschlossene Operationen anzeigen, aber keine neuen Git-Argumente ableiten.
+- opening a repository folder
+- choosing a URL-clone target folder
+- choosing a publish folder
 
-Publish-to-GitHub laeuft in der Desktop-Full-UI ueber `preparePublishPreflight` und `runPublishAction`. Beide Methoden verwenden die bestehenden Publish-Module, fuehren lokale Git-Schritte ueber `GitOperationQueue` und den Git CLI Wrapper aus und nutzen fuer Auth-Status sowie GitHub-Repository-Erstellung nur den backend-internen GitHub-Client. Der Renderer uebergibt nur Repository-Pfad, Name, Beschreibung, Sichtbarkeit sowie explizite Init-/Public-Bestaetigungen; `githubClient`, Token-Werte und freie GitHub-API-Aufrufe werden nicht an Tauri uebergeben. Repository-Antworten werden vor der Rueckgabe an den Renderer auf Metadaten wie Owner, Name, Sichtbarkeit und Clone-URLs normalisiert.
+They return `{ ok, canceled, path, error }`. They do not read or write files and do not expose a generic filesystem API.
 
-## GitHub Auth Bridge
+## Window Mode
 
-Die Desktop-Bridge stellt GitHub Auth als explizite, tokenfreie Methoden bereit:
+`desktop_set_window_mode` accepts only `floating` or `full`. It adjusts size, minimum size, and always-on-top state for the existing main window. It does not create a second UI instance, duplicate repository state, or run Git operations.
+
+## Watchers
+
+Watcher commands run in the persistent bridge worker:
+
+- `startRepositoryWatch` creates a `RepositoryStatusWatcher` for a concrete repository context.
+- `getRepositoryWatch` returns watcher snapshot, last loaded repository state, and last error.
+- `stopRepositoryWatch` closes the watcher when the tab closes.
+
+Refreshes continue to use debounce, busy deferral, and the same `loadRepositoryState` path as the Full UI.
+
+## Publish
+
+Desktop Publish to GitHub uses `preparePublishPreflight` and `runPublishAction`. Both methods reuse the existing publish modules, run local Git steps through `GitOperationQueue` and the Git CLI wrapper, and use only the backend-internal GitHub client for auth status and repository creation.
+
+The renderer passes repository path, name, description, visibility, and explicit init/public confirmations. It never passes a token, `githubClient`, or arbitrary GitHub API request to Tauri. Repository responses are normalized to token-free metadata such as owner, name, visibility, and clone URLs.
+
+## GitHub Auth And API
+
+The bridge exposes token-free GitHub methods:
 
 - `getGitHubAuthStatus`
 - `startGitHubDeviceLogin`
@@ -89,7 +112,7 @@ Die Desktop-Bridge stellt GitHub Auth als explizite, tokenfreie Methoden bereit:
 - `loadGitHubPullRequestChecks`
 - `loadGitHubPullRequestReviewContext`
 
-Zugehoerige Tauri-Command-Namen:
+Tauri command names:
 
 - `github_get_auth_status`
 - `github_device_login_start`
@@ -105,13 +128,27 @@ Zugehoerige Tauri-Command-Namen:
 - `github_load_pull_request_checks`
 - `github_load_pull_request_review_context`
 
-Diese Commands laufen ebenfalls ueber den persistenten Bridge-Worker. Der Default-Pfad von `createDesktopBridgeBackend()` erstellt dafuer ein `GitHubAuthBridgeBackend` mit backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`; Tests duerfen diese Bausteine injizieren, der Renderer bekommt aber nie direkten Zugriff darauf. Der Device Flow spricht die GitHub-OAuth-Endpunkte im Worker an, oeffnet optional nur die Verification URL im Systembrowser und pollt Access Tokens backend-intern. Repository-Liste, Repository-Suche, Pull-Request-Lookup, PR-Erstellung, Check-/Status-Lookup und Review-/Issue-Kontext laufen ueber denselben backend-internen GitHub-Client. Die Antworten liefern nur normalisierte Repository-, Pull-Request-, Check-, Review-Kommentar- und Issue-Link-Metadaten und geben keine Token-Werte an den Renderer zurueck. Fuer echte Desktop-Logins muss ein OAuth Client ueber `SOURCE_COMPANION_GITHUB_CLIENT_ID` oder `GITHUB_OAUTH_CLIENT_ID` konfiguriert sein.
+`createDesktopBridgeBackend()` creates a `GitHubAuthBridgeBackend` with backend-only `GitHubDeviceFlow` and `DesktopSecureTokenStore` by default. Tests may inject these pieces, but renderer code never receives them.
 
-`DesktopSecureTokenStore` speichert das Access Token im Betriebssystem-Credential-Store und haelt nur nicht-sensitive Metadaten wie Login, Scopes, Token-Quelle und letzte Validierung in einer lokalen JSON-Metadatendatei. Windows nutzt Windows Credential Manager, macOS Keychain und Linux Secret Service/libsecret ueber die jeweilige Plattform-Schnittstelle. Renderer-Antworten enthalten nur Auth-Status, User Code, Verification URL, Ablaufzeit, Polling-Intervall und strukturierte Fehler. Device Code und Access Token werden nicht normalisiert und nicht an den Renderer zurueckgegeben.
+The Device Flow talks to GitHub OAuth endpoints from the worker, optionally opens only the verification URL in the system browser, and polls for access tokens backend-internally. Repository list/search, PR lookup/creation, checks, review comments, and issue links use the backend-internal GitHub client.
 
-## Ausgeschlossen
+Responses return only normalized metadata. Device codes and access tokens are not returned to the renderer. Real desktop login requires `SOURCE_COMPANION_GITHUB_CLIENT_ID` or `GITHUB_OAUTH_CLIENT_ID`.
 
-- keine Methode wie `runGitCommand`, `runShellCommand`, `exec` oder `spawn`
-- keine generische Datei-Lese-/Schreib-API
-- keine Token-Werte im Renderer oder Repository-Kontext
-- keine freien GitHub-API-, Issue-, Notification-, Workflow- oder Dashboard-Commands
+## Secure Token Storage
+
+`DesktopSecureTokenStore` stores access tokens in the operating system credential store and keeps only non-sensitive metadata in a local JSON metadata file:
+
+- Windows Credential Manager
+- macOS Keychain
+- Linux Secret Service/libsecret
+
+Renderer responses contain auth status, user code, verification URL, expiration, polling interval, and structured errors only.
+
+## Excluded Surface
+
+The bridge must not add:
+
+- `runGitCommand`, `runShellCommand`, `exec`, `spawn`, or equivalent free command methods
+- generic file read/write/list APIs
+- token values in renderer state or repository contexts
+- free GitHub API, issue, notification, workflow, or dashboard commands
