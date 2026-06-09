@@ -22,7 +22,9 @@ function createTauriDesktopBridge({ invoke } = {}) {
 
   return Object.fromEntries(DESKTOP_BRIDGE_METHODS.map((method) => [
     method,
-    (request = {}) => invoke(DESKTOP_BRIDGE_COMMANDS[method], normalizeRequest(request))
+    (request = {}) => invoke(DESKTOP_BRIDGE_COMMANDS[method], {
+      request: normalizeRequest(request)
+    })
   ]));
 }
 

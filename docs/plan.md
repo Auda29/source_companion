@@ -31,7 +31,8 @@ Das Produkt soll bewusst eng bleiben. Es soll kein kleiner VS-Code-Klon und kein
 | Repo initialisieren | ja | Für Ordner ohne Git |
 | Repo klonen | ja | URL und GitHub-Auswahl |
 | Repo nach GitHub publishen | ja | Private/Public-Auswahl |
-| Merge/Rebase | vorsichtig | Nur Basisfunktionen, keine komplexe Git-Schule |
+| Merge | ja, begrenzt | Aktuellen Branch mit ausgewaehltem Branch mergen |
+| Rebase | spaeter | Nicht Teil des ersten Produktziels; keine History-Rewrites |
 | Git Graph/History | ja | Weil es Git-Zustand sichtbar macht |
 | GitHub PRs | ja | Erstellen, öffnen, Status sehen |
 | GitHub Checks | ja | Status und Ergebnis öffnen |
@@ -273,15 +274,23 @@ Regeln:
 - Force Push ist für das erste Produktziel nicht vorgesehen.
 - Pull-Konflikte führen in Conflict-Ansicht, nicht in ein Terminal.
 
-### 6.10 Merge/Rebase-Basisfunktionen
+### 6.10 Merge-Basisfunktion und Rebase-Abgrenzung
 
-Erlaubt, aber vorsichtig.
+Merge bleibt Teil des ersten Produktziels, aber nur als kontrollierte Basisfunktion.
 
-Produktziel:
-- Merge aktuellen Branch mit ausgewähltem Branch optional später.
-- Rebase nur, wenn UI und Fehlerfälle sauber sind.
+Erlaubt:
+- aktuellen Branch mit einem ausgewaehlten Branch mergen
+- normale Fast-forward- oder Merge-Commit-Ergebnisse anzeigen
+- Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output sichtbar machen
 
-Nicht für das erste Produktziel:
+Warnungen und Blockaden:
+- Vor dem Merge muss der gewaehlte Ziel-Branch sichtbar sein.
+- Bei uncommitted changes wird der Merge nicht still gestartet; Git-Fehler oder eine klare Vorabwarnung muessen sichtbar sein.
+- Bei bereits vorhandenen Konflikten wird kein neuer Merge gestartet.
+- Merge-Konflikte fuehren in den bestehenden Konfliktzustand und Git Output, nicht in ein Terminal.
+
+Nicht fuer das erste Produktziel:
+- Rebase
 - interaktives Rebase
 - komplexes Cherry-Pick-UI
 - History-Rewrite-Wizard
@@ -671,6 +680,7 @@ Muss enthalten:
 - Pull
 - Push
 - Sync
+- aktuellen Branch mit ausgewaehltem Branch mergen
 - Stash-Basisfunktionen
 
 Stash-Basisfunktionen:
@@ -682,7 +692,7 @@ Stash-Basisfunktionen:
 
 Nicht enthalten:
 - Force Push
-- interaktives Rebase
+- Rebase und andere History-Rewrites
 - komplexer Stash-Manager
 - Stash teilweise anwenden
 
@@ -724,7 +734,8 @@ Nicht Teil des ersten Produktziels:
 - Workspaces
 - eigenes SSH-Key-Management
 - Force Push
-- interaktives Rebase
+- Rebase
+- andere History-Rewrites
 - komplexes Cherry-Pick-UI
 - komplexer Stash-Browser
 - Stash teilweise anwenden
@@ -804,6 +815,12 @@ Stash:
 - Stash ist erlaubt.
 - Nur Basisfunktionen.
 - Kein komplexer Stash-Manager.
+
+Merge/Rebase:
+- Merge bleibt im ersten Produktziel als begrenzte Basisfunktion.
+- Erlaubt ist nur: aktuellen Branch mit einem ausgewaehlten Branch mergen.
+- Ziel-Branch, Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output muessen sichtbar sein.
+- Rebase, interaktives Rebase und andere History-Rewrites bleiben ausserhalb des ersten Produktziels.
 
 Force Push:
 - Erstmal nicht.

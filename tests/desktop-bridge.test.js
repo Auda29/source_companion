@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
@@ -51,11 +52,27 @@ test("tauri desktop bridge maps methods to explicit command names", async () => 
   assert.deepEqual(calls, [{
     command: "repository_run_commit_action",
     payload: {
-      repositoryPath: "C:\\repo",
-      action: "commit",
-      message: "Initial commit"
+      request: {
+        repositoryPath: "C:\\repo",
+        action: "commit",
+        message: "Initial commit"
+      }
     }
   }]);
+});
+
+test("tauri native app registers every repository bridge command", () => {
+  const lib = fs.readFileSync(path.join(projectRoot, "src-tauri", "src", "lib.rs"), "utf8");
+
+  Object.values(DESKTOP_BRIDGE_COMMANDS).forEach((command) => {
+    assert.match(lib, new RegExp(`#\\[tauri::command\\][\\s\\S]*fn ${command}\\b`));
+    assert.match(lib, new RegExp(`generate_handler!\\[[\\s\\S]*${command}`));
+  });
+
+  assert.match(lib, /DesktopBridgeWorker::start/);
+  assert.match(lib, /desktop-bridge-worker\.js/);
+  assert.match(lib, /--preserve-symlinks/);
+  assert.match(lib, /--preserve-symlinks-main/);
 });
 
 test("desktop bridge backend delegates git actions through the operation queue", async () => {
@@ -124,6 +141,35 @@ test("desktop bridge backend preserves hunk patch stdin through the queue", asyn
   assert.match(queue.requests[1].input, /@@ -1 \+1 @@/);
 });
 
+test("desktop bridge worker keeps a backend queue behind native command calls", async (t) => {
+  const workerPath = path.join(projectRoot, "src", "desktop-bridge-worker.js");
+  const worker = spawn(process.execPath, [
+    "--preserve-symlinks",
+    "--preserve-symlinks-main",
+    workerPath
+  ], {
+    cwd: projectRoot,
+    stdio: ["pipe", "pipe", "inherit"]
+  });
+  t.after(() => worker.kill());
+
+  const responsePromise = readWorkerLine(worker);
+  worker.stdin.write(`${JSON.stringify({
+    id: 1,
+    method: "getGitOutput",
+    request: {
+      repositoryPath: "C:\\repo"
+    }
+  })}\n`);
+
+  const response = await responsePromise;
+  assert.equal(response.id, 1);
+  assert.equal(response.ok, true);
+  assert.equal(response.result.ok, true);
+  assert.equal(response.result.repositoryId, "repo:c:\\repo");
+  assert.deepEqual(response.result.operations.running, []);
+});
+
 test("desktop bridge script loads before the main renderer", () => {
   const html = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
   assert.ok(
@@ -159,4 +205,22 @@ function createRecordingQueue() {
       };
     }
   };
+}
+
+function readWorkerLine(worker) {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const timeout = setTimeout(() => {
+      reject(new Error("Timed out waiting for desktop bridge worker response."));
+    }, 5000);
+
+    worker.once("error", reject);
+    worker.stdout.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      const newline = buffer.indexOf("\n");
+      if (newline === -1) return;
+      clearTimeout(timeout);
+      resolve(JSON.parse(buffer.slice(0, newline)));
+    });
+  });
 }

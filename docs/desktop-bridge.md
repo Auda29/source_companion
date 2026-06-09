@@ -4,7 +4,7 @@ Die Desktop-Bridge ist die einzige Renderer-Fassade fuer lokale Repository-Aktio
 
 ## Renderer-Fassade
 
-`src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Branch-, Sync- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist.
+`src/desktop-bridge.js` stellt `SourceCompanionDesktopBridge` bereit. `src/main.js` bevorzugt diese Fassade fuer Repository-State, Diff sowie Datei-, Hunk-, Commit-, Branch-, Sync- und Stash-Aktionen und nutzt die bisherigen Web-/CommonJS-Fallbacks nur, wenn keine Desktop-Bridge vorhanden ist. Tauri-Aufrufe uebergeben Renderer-Anfragen gekapselt als `{ request: ... }`, damit native Handler keine freie Argument- oder Shell-Flaeche erhalten.
 
 Erlaubte Methoden:
 
@@ -35,6 +35,8 @@ Zugehoerige Tauri-Command-Namen:
 ## Backend-Regeln
 
 Die Bridge-Backend-Implementierung delegiert Git-Ausfuehrungen ueber `GitOperationQueue`. Die Queue ruft weiterhin nur den bestehenden `git-cli-wrapper` auf. Dadurch bleiben Whitelist, strukturierte Argumente, Force-Push-Ablehnung, stdout, stderr, Exit-Code und strukturierte Fehler der bestehenden Git-Schicht erhalten.
+
+`src-tauri/src/lib.rs` registriert fuer jeden erlaubten Tauri-Command einen `#[tauri::command]`-Handler und einen `invoke_handler`. Diese Handler starten einen persistenten `src/desktop-bridge-worker.js`-Prozess mit `--preserve-symlinks` und `--preserve-symlinks-main` und senden JSON-RPC-artige Methoden an `createDesktopBridgeBackend()`. Dadurch bleibt die Queue pro Desktop-Laufzeit erhalten, und Git-Ausfuehrungen laufen weiterhin durch die bestehende JS-Git-Schicht statt durch freie native Commands.
 
 `getGitOutput` liefert den Queue-Snapshot fuer den Repository-Kontext. Die UI darf daraus laufende, queued und abgeschlossene Operationen anzeigen, aber keine neuen Git-Argumente ableiten.
 

@@ -38,7 +38,7 @@ Diese Funktionen sind fuer das erste Produktziel ausgeschlossen:
 - GitLab, Bitbucket oder generische Forge-Abstraktion
 - eigenes SSH-Key-Management
 - Force Push
-- interaktives Rebase, History-Rewrite-Wizard oder komplexes Cherry-Pick-UI
+- Rebase, interaktives Rebase, History-Rewrite-Wizard oder komplexes Cherry-Pick-UI
 
 ## 4. Backend-Scope-Gate
 
@@ -59,7 +59,14 @@ Gefaehrliche Aktionen brauchen eine erkennbare Warnung oder Bestaetigung, insbes
 - Discard
 - Amend
 - Branch loeschen
+- Merge bei uncommitted changes oder vorhandenen Konflikten
 - Remote ueberschreiben
 - Public Publish
 
 Source Companion fuehrt keine versteckten Automatismen aus: kein Auto-Commit, kein Auto-Push, kein Auto-Publish und kein stilles Loeschen oder Ueberschreiben.
+
+## 6. Merge/Rebase-Gate
+
+Merge ist fuer das erste Produktziel nur als kontrollierte Basisfunktion erlaubt: aktueller Branch plus ausgewaehlter Ziel-Branch, sichtbarer Fortschritt, Erfolg, Git-Fehler, Konfliktzustand und Git Output.
+
+Rebase und andere History-Rewrites bleiben ausserhalb des ersten Produktziels. Sie duerfen nicht indirekt ueber Sync, Pull, Push oder More-Menu-Aktionen angeboten werden.
