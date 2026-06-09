@@ -440,14 +440,14 @@ Stand 2026-06-09: Die zu breite Desktop-Shell-Aufgabe `T34` wurde durch `T48` bi
 
 ### T49 - Kontrollierten Desktop-Bridge-Vertrag fuer Git und Repository-State bauen
 
-- Status: `review`
+- Status: `todo`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T6`, `T7`, `T8`, `T48`
 - Definition of Done: Die Tauri-Bridge bietet nur explizit whitelisted Commands fuer Repository oeffnen, Git-Status, Diff, Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen und Git Output; alle Git-Ausfuehrungen nutzen den bestehenden Git CLI Wrapper und die Operation Queue; stdout, stderr, Exit-Code und strukturierte Fehler folgen dem dokumentierten Fehlervertrag; Renderer-Code nutzt eine gemeinsame Bridge-Fassade statt direkter Shell- oder Dateisystemzugriffe.
 - Implementierungsnotiz: Bridge-API klein und versionskontrollbezogen halten. Keine freien Command-Runner, keine generische Filesystem-API und keine Token-Werte an den Renderer liefern.
 - Notiz: 2026-06-09 15:10 CEST umgesetzt: `src/desktop-bridge.js` definiert die gemeinsame Renderer-Fassade, whitelisted Tauri-Command-Namen und ein testbares Backend, das Repository-State, Diff sowie Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen ueber `GitOperationQueue` und den bestehenden Git Wrapper ausfuehrt; `src/main.js` bevorzugt die Fassade vor Web-/CommonJS-Fallbacks. `docs/desktop-bridge.md` dokumentiert Methoden, Tauri-Kommandos, Fehler-/Output-Vertrag und Ausschluesse. Fokussierte Bridge-Tests und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
-- Offene Review-Punkte: -
+- Review-Ergebnis: Nicht bestanden am 2026-06-09. Die JS-Fassade und Tests definieren zwar whitelisted Tauri-Command-Namen, aber die native Tauri-App registriert diese Commands nicht.
+- Offene Review-Punkte: `src-tauri/src/lib.rs` enthaelt keine `#[tauri::command]`-Handler und keinen `invoke_handler(tauri::generate_handler![...])` fuer `repository_open`, `repository_load_state`, `repository_load_file_diff`, `repository_run_file_action`, `repository_run_hunk_action`, `repository_run_commit_action`, `repository_run_branch_action`, `repository_run_sync_action`, `repository_run_stash_action` oder `repository_get_git_output`; Desktop-`invoke(...)`-Aufrufe laufen damit ins Leere. Ausserdem ist das testbare Backend in `src/desktop-bridge.js` CommonJS/Node-basiert und nicht als native Tauri-Backend-Ausfuehrung verdrahtet, sodass noch nicht nachgewiesen ist, dass Desktop-Git-Ausfuehrungen tatsaechlich ueber den bestehenden Git CLI Wrapper und die `GitOperationQueue` laufen.
 
 ### T50 - Native Ordnerdialoge und Desktop-Watcher verdrahten
 
@@ -471,12 +471,13 @@ Stand 2026-06-09: Die zu breite Desktop-Shell-Aufgabe `T34` wurde durch `T48` bi
 
 ### T44 - Floating Window Modus konzipieren
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T33`, `T14`, `T16`, `T23`
 - Definition of Done: Ein kurzes Konzept dokumentiert Layout, sichtbare Felder, erlaubte Aktionen, Fehler-/Busy-Zustaende, Warnungsweiterleitung, Fokusverhalten und die gemeinsame State-/Queue-Nutzung fuer das Floating Window; enthalten sind Repository, Branch, Change-Zaehler, Status/Fehler sowie kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; ausgeschlossen bleiben Dashboard-, Terminal-, Projektbaum- und Task-Runner-Funktionen.
 - Implementierungsnotiz: Erst den kompakten Modus festlegen, dann bauen. Das Konzept muss benennen, welche Aktionen direkt im Floating Window laufen und welche in die Full UI fuehren.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 15:23 CEST umgesetzt: `docs/floating-window-concept.md` dokumentiert Layout, sichtbare Felder, direkte Floating-Window-Aktionen, Full-UI-Weiterleitungen, Fehler-/Busy-Zustaende, Warnungsweiterleitung, Fokusverhalten sowie gemeinsame Repository-State-/Queue-Nutzung. Ausgeschlossene Dashboard-, Terminal-, Projektbaum-, Task-Runner- und freie Command-Runner-Funktionen sind explizit abgegrenzt.
+- Review-Ergebnis: Bestanden am 2026-06-09. `docs/floating-window-concept.md` dokumentiert Layout, sichtbare Felder, erlaubte direkte Aktionen, Full-UI-Weiterleitungen, Fehler-/Busy-Zustaende, Warnungsweiterleitung, Fokusverhalten und gemeinsame Repository-State-/Queue-Nutzung; Dashboard-, Terminal-, Projektbaum-, Task-Runner- und freie Command-Runner-Funktionen sind explizit ausgeschlossen.
 - Offene Review-Punkte: -
 
 ### T45 - Floating Window Modus bauen
