@@ -739,7 +739,7 @@ Nicht Teil des ersten Produktziels:
 - komplexes Cherry-Pick-UI
 - komplexer Stash-Browser
 - Stash teilweise anwenden
-- AI Commit Message, solange das Konzept nicht sauber entschieden ist
+- AI Commit Message, Umsetzung spaeter optional gemaess `docs/ai-commit-message-concept.md`
 - Übergabe an Codex/Zed/Pi als Kernfunktion
 
 ## 11. Spätere optionale Funktionen
@@ -748,7 +748,7 @@ Nur prüfen, wenn Kernprodukt stabil ist:
 - side-by-side Diff
 - Cherry-pick einzelner Commit
 - einfache Conflict-Hilfe ohne Editor
-- AI Commit Message, Konzept noch offen
+- AI Commit Message, Konzept entschieden; Umsetzung spaeter optional
 - Übergabe an Codex/Zed/Pi für Datei-Bearbeitung oder Analyse
 
 Wichtig:
@@ -829,7 +829,7 @@ Force Push:
 
 AI Commit Message:
 - Nicht ausgeschlossen.
-- Wichtiges Feature, muss separat durchdacht werden.
+- Wichtiges Feature, dessen spaetere optionale Umsetzung in `docs/ai-commit-message-concept.md` eingegrenzt ist.
 - Darf nicht zu AI Chat oder Agent-Workflow ausarten.
 
 ### 13.2 Geklärt: SSH-Key-Handling
@@ -888,26 +888,25 @@ Entscheidung:
 - Hunk stage/unstage gehört in das erste Produktziel.
 - Source Companion soll nicht nur Datei-Staging können, sondern ernsthaft saubere Commit-Erstellung unterstützen.
 
-### 13.4 Noch zu klären: AI Commit Message
+### 13.4 Geklärt: AI Commit Message
 
-AI Commit Message ist potenziell wichtig, aber gefährlich für den Scope.
+AI Commit Message ist als spaetere optionale Commit-Box-Funktion erlaubt, aber nicht Teil des ersten Produktziels. Die konkrete Produktentscheidung steht in `docs/ai-commit-message-concept.md`.
 
-Erlaubbare Richtung:
-- leeres Commit-Message-Feld kann eine Commit Message generieren, aehnlich Codex
-- alternativ oder ergaenzend: expliziter Button zum Vorschlagen einer Commit Message
-- Vorschlag basiert nur auf staged diff
-- Nutzer muss Message prüfen und selbst committen
+Entscheidung:
+- Ein leeres Commit-Message-Feld startet keine stille Generierung.
+- Generation aus einem leeren Feld braucht eine explizite Bestaetigung.
+- Ein kompakter Generate-Button im Commit-Bereich ist erlaubt.
+- Die erste Datenbasis ist nur der staged Diff plus minimale Git-Metadaten.
+- Der Vorschlag wird als editierbarer Draft in das Commit-Message-Feld geschrieben.
+- Nutzer muss den Vorschlag pruefen und den Commit selbst ausloesen.
+
+Grenzen:
 - kein autonomer Commit
+- kein automatischer Push
 - kein Chatfenster
 - kein Agent-Loop
-
-Noch zu klären:
-- lokal eingebaut oder externer Codex-Aufruf
-- ob leeres Feld direkt generiert oder vorher eine kurze Bestaetigung zeigt
-- nur staged diff oder auch unstaged context
-- Datenschutz/Prompt-Anzeige
-- Kosten/Rate-Limits
-- ob das Feature Teil des ersten Produktziels oder eine spätere Erweiterung wird
+- keine Provider-Tokens im Renderer, in `localStorage`, Repository-Kontexten, Git-Remotes oder Git-Argumenten
+- Kosten-, Rate-Limit-, Netzwerk-, Timeout-, leere Antwort- und zu-grosser-Diff-Fehler muessen sichtbar sein
 
 ## 14. Finale Definition
 

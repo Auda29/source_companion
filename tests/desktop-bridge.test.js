@@ -15,8 +15,11 @@ const {
 
 const projectRoot = path.join(__dirname, "..");
 
-test("desktop bridge exposes only repository source-control methods", () => {
+test("desktop bridge exposes only whitelisted desktop repository and auth methods", () => {
   assert.deepEqual(DESKTOP_BRIDGE_METHODS, [
+    "pickRepositoryFolder",
+    "pickCloneTargetFolder",
+    "pickPublishFolder",
     "openRepository",
     "loadRepositoryState",
     "loadFileDiff",
@@ -26,11 +29,22 @@ test("desktop bridge exposes only repository source-control methods", () => {
     "runBranchAction",
     "runSyncAction",
     "runStashAction",
-    "getGitOutput"
+    "getGitOutput",
+    "startRepositoryWatch",
+    "getRepositoryWatch",
+    "stopRepositoryWatch",
+    "getGitHubAuthStatus",
+    "startGitHubDeviceLogin",
+    "getGitHubDeviceLoginStatus",
+    "pollGitHubDeviceLogin",
+    "cancelGitHubDeviceLogin",
+    "loginGitHub",
+    "logoutGitHub"
   ]);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runGitCommand"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "runShellCommand"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "readFile"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(DESKTOP_BRIDGE_COMMANDS, "readGitHubToken"), false);
 });
 
 test("tauri desktop bridge maps methods to explicit command names", async () => {
@@ -69,10 +83,61 @@ test("tauri native app registers every repository bridge command", () => {
     assert.match(lib, new RegExp(`generate_handler!\\[[\\s\\S]*${command}`));
   });
 
+  assert.match(lib, /tauri_plugin_dialog::init/);
+  assert.match(lib, /blocking_pick_folder/);
   assert.match(lib, /DesktopBridgeWorker::start/);
   assert.match(lib, /desktop-bridge-worker\.js/);
   assert.match(lib, /--preserve-symlinks/);
   assert.match(lib, /--preserve-symlinks-main/);
+});
+
+test("desktop bridge backend owns repository watchers behind start get and stop commands", async () => {
+  let closed = false;
+  const bridge = createDesktopBridgeBackend({
+    queue: createRecordingQueue(),
+    RepositoryStatusWatcher: class {
+      watchRepository(options) {
+        options.onState({
+          kind: "git-repository",
+          health: "ready",
+          git: { branch: { name: "main" } }
+        });
+        return {
+          getSnapshot: () => ({
+            repositoryId: options.repositoryId,
+            repositoryPath: options.repositoryPath,
+            status: "idle",
+            refreshCount: 1,
+            lastRefreshCompletedAt: "2026-06-09T16:20:00.000Z",
+            pendingReasons: [],
+            watchTargets: [{ path: options.repositoryPath, kind: "worktree" }],
+            errors: []
+          }),
+          close: () => {
+            closed = true;
+          }
+        };
+      }
+    }
+  });
+
+  const started = await bridge.startRepositoryWatch({
+    repositoryId: "repo-1",
+    repositoryPath: "C:\\repo"
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.watching, true);
+  assert.equal(started.latestState.git.branch.name, "main");
+  assert.equal(started.snapshot.watchTargets[0].kind, "worktree");
+
+  const snapshot = await bridge.getRepositoryWatch({ repositoryId: "repo-1" });
+  assert.equal(snapshot.ok, true);
+  assert.equal(snapshot.snapshot.refreshCount, 1);
+
+  const stopped = await bridge.stopRepositoryWatch({ repositoryId: "repo-1" });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.watching, false);
+  assert.equal(closed, true);
 });
 
 test("desktop bridge backend delegates git actions through the operation queue", async () => {
@@ -103,6 +168,112 @@ test("desktop bridge backend delegates git actions through the operation queue",
     priority: undefined,
     input: undefined
   });
+});
+
+test("desktop bridge backend keeps GitHub device login tokens backend-only", async () => {
+  const tokenStore = createRecordingTokenStore();
+  const bridge = createDesktopBridgeBackend({
+    queue: createRecordingQueue(),
+    githubAuthBackend: require("../src/github-api-client").createGitHubAuthBridgeBackend({
+      tokenStore,
+      now: () => "2026-06-09T18:00:00.000Z",
+      deviceFlow: {
+        startDeviceLoginSession: async ({ scopes }) => ({
+          loginId: "login-1",
+          deviceCode: "device-secret",
+          userCode: "ABCD-1234",
+          verificationUrl: "https://github.com/login/device",
+          expiresAt: "2026-06-09T18:15:00.000Z",
+          intervalSeconds: 5,
+          scopes
+        }),
+        pollDeviceLogin: async () => ({
+          token: "secret-token",
+          login: "octo",
+          scopes: ["repo", "read:user"]
+        })
+      }
+    })
+  });
+
+  const started = await bridge.startGitHubDeviceLogin({ openBrowser: true });
+  assert.equal(started.status, "pending");
+  assert.equal(started.userCode, "ABCD-1234");
+  assert.equal(started.verificationUrl, "https://github.com/login/device");
+  assert.equal(started.deviceCode, undefined);
+  assert.equal(started.token, undefined);
+
+  const completed = await bridge.pollGitHubDeviceLogin();
+  assert.equal(completed.status, "authenticated");
+  assert.equal(completed.auth.authenticated, true);
+  assert.equal(completed.auth.user, "octo");
+  assert.equal(completed.token, undefined);
+  assert.equal(completed.auth.token, undefined);
+  assert.equal(tokenStore.record.token, "secret-token");
+
+  const status = await bridge.getGitHubAuthStatus();
+  assert.equal(status.authenticated, true);
+  assert.equal(status.token, undefined);
+
+  const loggedOut = await bridge.logoutGitHub();
+  assert.equal(loggedOut.authenticated, false);
+  assert.equal(tokenStore.record, null);
+});
+
+test("desktop bridge default auth backend wires device flow and secure token store", async () => {
+  const tokenStore = createRecordingTokenStore();
+  const bridge = createDesktopBridgeBackend({
+    queue: createRecordingQueue(),
+    githubAuthOptions: {
+      tokenStore,
+      now: () => "2026-06-09T18:30:00.000Z",
+      deviceFlow: {
+        startDeviceLoginSession: async ({ scopes, openBrowser }) => {
+          assert.deepEqual(scopes, ["repo", "read:user"]);
+          assert.equal(openBrowser, true);
+          return {
+            deviceCode: "device-secret",
+            userCode: "WXYZ-7890",
+            verificationUrl: "https://github.com/login/device",
+            expiresAt: "2026-06-09T18:45:00.000Z",
+            intervalSeconds: 5
+          };
+        },
+        pollDeviceLogin: async ({ deviceCode }) => {
+          assert.equal(deviceCode, "device-secret");
+          return {
+            token: "secret-token",
+            login: "octo",
+            scopes: ["repo", "read:user"]
+          };
+        }
+      }
+    }
+  });
+
+  const initial = await bridge.getGitHubAuthStatus();
+  assert.equal(initial.authenticated, false);
+  assert.equal(initial.error, null);
+
+  const started = await bridge.startGitHubDeviceLogin({ openBrowser: true });
+  assert.equal(started.status, "pending");
+  assert.equal(started.userCode, "WXYZ-7890");
+  assert.equal(started.deviceCode, undefined);
+
+  const completed = await bridge.pollGitHubDeviceLogin();
+  assert.equal(completed.status, "authenticated");
+  assert.equal(completed.auth.user, "octo");
+  assert.equal(completed.auth.token, undefined);
+  assert.equal(tokenStore.record.token, "secret-token");
+
+  const status = await bridge.getGitHubAuthStatus();
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user, "octo");
+  assert.equal(status.token, undefined);
+
+  const loggedOut = await bridge.logoutGitHub();
+  assert.equal(loggedOut.authenticated, false);
+  assert.equal(tokenStore.record, null);
 });
 
 test("desktop bridge backend preserves hunk patch stdin through the queue", async () => {
@@ -203,6 +374,27 @@ function createRecordingQueue() {
         completed: [],
         lastCompleted: null
       };
+    }
+  };
+}
+
+function createRecordingTokenStore() {
+  return {
+    record: null,
+    async read() {
+      return this.record ? { ...this.record, scopes: [...this.record.scopes] } : null;
+    },
+    async write(record) {
+      this.record = {
+        token: record.token,
+        login: record.login,
+        scopes: [...record.scopes],
+        tokenSource: record.tokenSource,
+        lastValidatedAt: record.lastValidatedAt
+      };
+    },
+    async delete() {
+      this.record = null;
     }
   };
 }

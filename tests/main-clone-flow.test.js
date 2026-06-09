@@ -121,6 +121,47 @@ test("github clone dialog starts clone with selected repository clone URL", asyn
   assert.equal(cloneRequest.targetPath, "C:\\code\\source-companion");
 });
 
+test("desktop folder picker fills clone target field", async () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const cloneForm = new FakeForm("clone", {
+    url: "https://github.com/owner/repo.git",
+    target: ""
+  });
+  const browseButton = new FakeElement();
+  browseButton.dataset = { folderDialog: "clone" };
+  browseButton.closest = () => cloneForm;
+  const document = new FakeDocument([cloneForm], {}, [browseButton]);
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionDesktopBridge: {
+        pickCloneTargetFolder: async () => ({
+          ok: true,
+          canceled: false,
+          path: "C:\\code\\picked-repo"
+        })
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  browseButton.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(cloneForm.getInput("target").value, "C:\\code\\picked-repo");
+});
+
 test("publish dialog prepares preflight without starting publish", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const publishForm = new FakeForm("publish", {
@@ -805,6 +846,10 @@ class FakeForm extends FakeElement {
     super();
     this.dataset = { flow };
     this.values = values;
+    this.inputs = new Map(Object.entries(values).map(([name, value]) => [
+      name,
+      Object.assign(new FakeElement(), { value })
+    ]));
     this.resetCount = 0;
     this.closed = false;
   }
@@ -821,11 +866,25 @@ class FakeForm extends FakeElement {
       }
     };
   }
+
+  getInput(name) {
+    if (!this.inputs.has(name)) {
+      this.inputs.set(name, new FakeElement());
+    }
+    return this.inputs.get(name);
+  }
+
+  querySelector(selector) {
+    const match = String(selector || "").match(/^input\[name="([^"]+)"\]$/);
+    if (match) return this.getInput(match[1]);
+    return super.querySelector(selector);
+  }
 }
 
 class FakeDocument {
-  constructor(forms, elements = {}) {
+  constructor(forms, elements = {}, folderButtons = []) {
     this.forms = forms;
+    this.folderButtons = folderButtons;
     this.elements = new Map();
     Object.entries(elements).forEach(([id, element]) => {
       this.elements.set(id, element);
@@ -841,6 +900,7 @@ class FakeDocument {
 
   querySelectorAll(selector) {
     if (selector === ".dialog-body") return this.forms;
+    if (selector === "[data-folder-dialog]") return this.folderButtons;
     return [];
   }
 

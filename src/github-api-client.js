@@ -1,6 +1,14 @@
 "use strict";
 
+const fs = typeof require === "function" ? require("node:fs") : null;
+const os = typeof require === "function" ? require("node:os") : null;
+const path = typeof require === "function" ? require("node:path") : null;
+const { spawn } = typeof require === "function" ? require("node:child_process") : { spawn: null };
+
 const DEFAULT_API_BASE_URL = "https://api.github.com";
+const DEFAULT_GITHUB_WEB_BASE_URL = "https://github.com";
+const DEFAULT_AUTH_METADATA_FILENAME = "github-auth.json";
+const SECURE_TOKEN_SERVICE = "Source Companion";
 const REQUIRED_SCOPES = ["repo", "read:user"];
 
 class MemorySecureTokenStore {
@@ -50,6 +58,233 @@ class UnavailableSecureTokenStore {
   }
 }
 
+class FileSecureTokenMetadataStore {
+  constructor({ filePath } = {}) {
+    this.filePath = filePath || defaultAuthMetadataPath();
+  }
+
+  async read() {
+    if (!fs || !this.filePath) return null;
+    try {
+      const text = await fs.promises.readFile(this.filePath, "utf8");
+      const data = JSON.parse(text);
+      return {
+        login: clean(data.login),
+        scopes: normalizeScopes(data.scopes),
+        tokenSource: clean(data.tokenSource) || "device-flow",
+        lastValidatedAt: clean(data.lastValidatedAt) || null
+      };
+    } catch (error) {
+      if (error && error.code === "ENOENT") return null;
+      throw createGitHubError({
+        kind: "secure-storage-unavailable",
+        message: "GitHub auth metadata could not be read.",
+        raw: error
+      });
+    }
+  }
+
+  async write(record) {
+    if (!fs || !path || !this.filePath) {
+      throw createGitHubError({
+        kind: "secure-storage-unavailable",
+        message: "GitHub auth metadata storage is not available."
+      });
+    }
+
+    const metadata = {
+      login: clean(record.login),
+      scopes: normalizeScopes(record.scopes),
+      tokenSource: clean(record.tokenSource) || "device-flow",
+      lastValidatedAt: record.lastValidatedAt || null
+    };
+    await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
+    await fs.promises.writeFile(this.filePath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  }
+
+  async delete() {
+    if (!fs || !this.filePath) return;
+    try {
+      await fs.promises.unlink(this.filePath);
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+class DesktopSecureTokenStore {
+  constructor({
+    metadataStore,
+    credentialAdapter,
+    service = SECURE_TOKEN_SERVICE
+  } = {}) {
+    this.metadataStore = metadataStore || new FileSecureTokenMetadataStore();
+    this.credentialAdapter = credentialAdapter || createPlatformCredentialAdapter();
+    this.service = service;
+  }
+
+  async read() {
+    const metadata = await this.metadataStore.read();
+    if (!metadata || !metadata.login) return null;
+
+    const account = accountKeyForLogin(metadata.login);
+    const token = await this.credentialAdapter.read({
+      service: this.service,
+      account,
+      login: metadata.login
+    });
+    if (!token) return null;
+
+    return {
+      token,
+      login: metadata.login,
+      scopes: normalizeScopes(metadata.scopes),
+      tokenSource: clean(metadata.tokenSource) || "device-flow",
+      lastValidatedAt: metadata.lastValidatedAt || null
+    };
+  }
+
+  async write(record) {
+    const login = clean(record.login);
+    const token = requireString(record.token, "token");
+    if (!login) {
+      throw createGitHubError({
+        kind: "github-api-error",
+        message: "GitHub login is required before storing a token."
+      });
+    }
+
+    await this.credentialAdapter.write({
+      service: this.service,
+      account: accountKeyForLogin(login),
+      login,
+      token
+    });
+    await this.metadataStore.write({
+      login,
+      scopes: normalizeScopes(record.scopes),
+      tokenSource: clean(record.tokenSource) || "device-flow",
+      lastValidatedAt: record.lastValidatedAt || null
+    });
+  }
+
+  async delete(login) {
+    const metadata = await this.metadataStore.read();
+    const normalizedLogin = clean(login) || clean(metadata && metadata.login);
+    if (normalizedLogin) {
+      await this.credentialAdapter.delete({
+        service: this.service,
+        account: accountKeyForLogin(normalizedLogin),
+        login: normalizedLogin
+      });
+    }
+    await this.metadataStore.delete();
+  }
+}
+
+class GitHubDeviceFlow {
+  constructor({
+    clientId = defaultGitHubClientId(),
+    fetchImpl = globalThis.fetch,
+    githubBaseUrl = DEFAULT_GITHUB_WEB_BASE_URL,
+    now = () => new Date(),
+    openExternal = openUrlInSystemBrowser
+  } = {}) {
+    this.clientId = clean(clientId);
+    this.fetch = fetchImpl;
+    this.githubBaseUrl = String(githubBaseUrl || DEFAULT_GITHUB_WEB_BASE_URL).replace(/\/+$/, "");
+    this.now = now;
+    this.openExternal = openExternal;
+  }
+
+  async startDeviceLoginSession({ scopes = REQUIRED_SCOPES, openBrowser = false } = {}) {
+    if (!this.clientId) {
+      throw createGitHubError({
+        kind: "github-login-unavailable",
+        message: "GitHub OAuth client ID is not configured for desktop login."
+      });
+    }
+    if (typeof this.fetch !== "function") {
+      throw createGitHubError({
+        kind: "github-network-error",
+        message: "GitHub device login fetch is not available in this runtime."
+      });
+    }
+
+    const data = await this.postOAuthJson("/login/device/code", {
+      client_id: this.clientId,
+      scope: normalizeScopes(scopes).join(" ")
+    });
+    if (data.error) throw normalizeOAuthDeviceError(data);
+
+    const verificationUrl = clean(data.verification_uri_complete || data.verification_uri);
+    if (openBrowser && verificationUrl && typeof this.openExternal === "function") {
+      await this.openExternal(verificationUrl);
+    }
+
+    return {
+      deviceCode: clean(data.device_code),
+      userCode: clean(data.user_code),
+      verificationUrl,
+      expiresAt: expiresAtFromSeconds(data.expires_in, this.now),
+      intervalSeconds: parseInteger(data.interval) || 5
+    };
+  }
+
+  async pollDeviceLogin({ deviceCode } = {}) {
+    const normalizedDeviceCode = clean(deviceCode);
+    if (!normalizedDeviceCode) {
+      throw createGitHubError({
+        kind: "github-login-cancelled",
+        message: "GitHub device login is not running."
+      });
+    }
+
+    const data = await this.postOAuthJson("/login/oauth/access_token", {
+      client_id: this.clientId,
+      device_code: normalizedDeviceCode,
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+    });
+    if (data.error) {
+      return {
+        status: clean(data.error),
+        errorDescription: clean(data.error_description)
+      };
+    }
+
+    return {
+      token: clean(data.access_token),
+      scopes: normalizeScopes(data.scope),
+      tokenSource: "device-flow"
+    };
+  }
+
+  async postOAuthJson(endpoint, body) {
+    let response;
+    try {
+      response = await this.fetch(`${this.githubBaseUrl}${endpoint}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      throw normalizeGitHubError(error, {
+        kind: "github-network-error",
+        message: "GitHub device login network request failed."
+      });
+    }
+
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      throw normalizeGitHubResponseError(response, data);
+    }
+    return data || {};
+  }
+}
+
 class GitHubBridgeClient {
   constructor(bridge) {
     this.bridge = bridge || null;
@@ -59,8 +294,24 @@ class GitHubBridgeClient {
     return normalizeTokenFreeAuthStatus(await this.callBridge("getAuthStatus"));
   }
 
+  async startDeviceLogin(options = {}) {
+    return normalizeDeviceLoginStatus(await this.callBridge("startDeviceLogin", options));
+  }
+
+  async getLoginStatus(options = {}) {
+    return normalizeDeviceLoginStatus(await this.callBridge("getLoginStatus", options));
+  }
+
+  async pollDeviceLogin(options = {}) {
+    return normalizeDeviceLoginStatus(await this.callBridge("pollDeviceLogin", options));
+  }
+
+  async cancelDeviceLogin(options = {}) {
+    return normalizeDeviceLoginStatus(await this.callBridge("cancelDeviceLogin", options));
+  }
+
   async login() {
-    return normalizeTokenFreeAuthStatus(await this.callBridge("login"));
+    return normalizeTokenFreeAuthStatus(await this.callBridge("login", {}));
   }
 
   async logout(options = {}) {
@@ -183,6 +434,10 @@ class GitHubApiClient {
       return createNoTokenStatus(normalizeGitHubError(error));
     }
 
+    return this.completeDeviceLogin(loginResult);
+  }
+
+  async completeDeviceLogin(loginResult) {
     if (!loginResult || !loginResult.token) {
       return createNoTokenStatus(createGitHubError({
         kind: "github-login-cancelled",
@@ -687,12 +942,527 @@ class GitHubApiClient {
   }
 }
 
+class GitHubAuthBridgeBackend {
+  constructor({
+    githubClient,
+    tokenStore,
+    deviceFlow,
+    fetchImpl,
+    apiBaseUrl,
+    requiredScopes,
+    now
+  } = {}) {
+    this.deviceFlow = deviceFlow || null;
+    this.client = githubClient || new GitHubApiClient({
+      tokenStore,
+      deviceFlow,
+      fetchImpl,
+      apiBaseUrl,
+      requiredScopes,
+      now
+    });
+    this.activeLogin = null;
+    this.nextLoginId = 1;
+  }
+
+  async getAuthStatus() {
+    return normalizeTokenFreeAuthStatus(await this.client.getAuthStatus());
+  }
+
+  async startDeviceLogin(options = {}) {
+    if (!this.deviceFlow || typeof this.deviceFlow.startDeviceLoginSession !== "function") {
+      return createDeviceLoginStatusFailure("github-login-unavailable", "GitHub device login is not available in this runtime.");
+    }
+
+    try {
+      if (this.activeLogin && typeof this.deviceFlow.cancelDeviceLogin === "function") {
+        await this.deviceFlow.cancelDeviceLogin({ loginId: this.activeLogin.loginId });
+      }
+    } catch {
+      // Replacing an in-flight login should not make the new login unavailable.
+    }
+
+    try {
+      const started = await this.deviceFlow.startDeviceLoginSession({
+        scopes: [...this.client.requiredScopes],
+        openBrowser: Boolean(options.openBrowser)
+      });
+      const loginId = clean(started && started.loginId) || `github-login-${this.nextLoginId++}`;
+      this.activeLogin = {
+        loginId,
+        deviceCode: clean(started && (started.deviceCode || started.device_code)),
+        userCode: clean(started && (started.userCode || started.user_code)),
+        verificationUrl: clean(started && (started.verificationUrl || started.verification_uri || started.verification_uri_complete)),
+        expiresAt: clean(started && (started.expiresAt || started.expires_at)),
+        intervalSeconds: parseInteger(started && (started.intervalSeconds || started.interval)) || 5,
+        status: "pending",
+        error: null
+      };
+      return normalizeDeviceLoginStatus(this.activeLogin);
+    } catch (error) {
+      this.activeLogin = null;
+      return normalizeDeviceLoginStatus({
+        status: "failed",
+        error: normalizeGitHubError(error)
+      });
+    }
+  }
+
+  async getLoginStatus() {
+    if (!this.activeLogin) {
+      return normalizeDeviceLoginStatus({
+        status: "idle",
+        error: null
+      });
+    }
+    return normalizeDeviceLoginStatus(this.activeLogin);
+  }
+
+  async pollDeviceLogin(options = {}) {
+    if (!this.activeLogin) {
+      return createDeviceLoginStatusFailure("github-login-cancelled", "No GitHub device login is running.");
+    }
+    if (!this.deviceFlow || typeof this.deviceFlow.pollDeviceLogin !== "function") {
+      return createDeviceLoginStatusFailure("github-login-unavailable", "GitHub device login polling is not available in this runtime.");
+    }
+
+    try {
+      const result = await this.deviceFlow.pollDeviceLogin({
+        loginId: this.activeLogin.loginId,
+        deviceCode: this.activeLogin.deviceCode,
+        scopes: [...this.client.requiredScopes],
+        ...normalizeRequest(options)
+      });
+      const status = clean(result && result.status);
+
+      if (status === "authorization_pending" || status === "pending" || (!status && !(result && result.token))) {
+        this.activeLogin = {
+          ...this.activeLogin,
+          status: "pending",
+          error: null
+        };
+        return normalizeDeviceLoginStatus(this.activeLogin);
+      }
+
+      if (status === "slow_down") {
+        this.activeLogin = {
+          ...this.activeLogin,
+          status: "pending",
+          intervalSeconds: this.activeLogin.intervalSeconds + 5,
+          error: null
+        };
+        return normalizeDeviceLoginStatus(this.activeLogin);
+      }
+
+      if (status === "expired_token" || status === "expired") {
+        const failed = normalizeDeviceLoginStatus({
+          ...this.activeLogin,
+          status: "expired",
+          error: createGitHubError({
+            kind: "github-login-expired",
+            message: "GitHub device login expired."
+          })
+        });
+        this.activeLogin = null;
+        return failed;
+      }
+
+      if (status === "access_denied" || status === "cancelled" || status === "canceled") {
+        const failed = normalizeDeviceLoginStatus({
+          ...this.activeLogin,
+          status: "cancelled",
+          error: createGitHubError({
+            kind: "github-login-cancelled",
+            message: "GitHub device login was cancelled."
+          })
+        });
+        this.activeLogin = null;
+        return failed;
+      }
+
+      if (result && result.token) {
+        const auth = await this.client.completeDeviceLogin(result);
+        const completed = normalizeDeviceLoginStatus({
+          ...this.activeLogin,
+          status: auth.authenticated ? "authenticated" : "failed",
+          auth,
+          error: auth.error
+        });
+        this.activeLogin = null;
+        return completed;
+      }
+
+      throw createGitHubError({
+        kind: "github-api-error",
+        message: "GitHub device login returned an unsupported status."
+      });
+    } catch (error) {
+      const failed = normalizeDeviceLoginStatus({
+        ...this.activeLogin,
+        status: "failed",
+        error: normalizeGitHubError(error)
+      });
+      this.activeLogin = null;
+      return failed;
+    }
+  }
+
+  async cancelDeviceLogin() {
+    const login = this.activeLogin;
+    this.activeLogin = null;
+    if (login && this.deviceFlow && typeof this.deviceFlow.cancelDeviceLogin === "function") {
+      try {
+        await this.deviceFlow.cancelDeviceLogin({
+          loginId: login.loginId,
+          deviceCode: login.deviceCode
+        });
+      } catch (error) {
+        return normalizeDeviceLoginStatus({
+          ...login,
+          status: "failed",
+          error: normalizeGitHubError(error)
+        });
+      }
+    }
+
+    return normalizeDeviceLoginStatus({
+      ...(login || {}),
+      status: "cancelled",
+      error: null
+    });
+  }
+
+  async login() {
+    return normalizeTokenFreeAuthStatus(await this.client.login());
+  }
+
+  async logout(options = {}) {
+    this.activeLogin = null;
+    return normalizeTokenFreeAuthStatus(await this.client.logout(options));
+  }
+}
+
 function createGitHubApiClient(options) {
   return new GitHubApiClient(options);
 }
 
 function createGitHubBridgeClient(bridge) {
   return new GitHubBridgeClient(bridge);
+}
+
+function createGitHubAuthBridgeBackend(options) {
+  return new GitHubAuthBridgeBackend(options);
+}
+
+function createDesktopGitHubAuthBridgeBackend(options = {}) {
+  return createGitHubAuthBridgeBackend({
+    ...options,
+    tokenStore: options.tokenStore || new DesktopSecureTokenStore(options.tokenStoreOptions),
+    deviceFlow: options.deviceFlow || new GitHubDeviceFlow(options.deviceFlowOptions)
+  });
+}
+
+function createDesktopSecureTokenStore(options) {
+  return new DesktopSecureTokenStore(options);
+}
+
+function createGitHubDeviceFlow(options) {
+  return new GitHubDeviceFlow(options);
+}
+
+function createPlatformCredentialAdapter({
+  platform = process.platform,
+  runCommand = runCredentialCommand
+} = {}) {
+  if (platform === "win32") return createWindowsCredentialAdapter(runCommand);
+  if (platform === "darwin") return createMacOSCredentialAdapter(runCommand);
+  return createLinuxCredentialAdapter(runCommand);
+}
+
+function createWindowsCredentialAdapter(runCommand) {
+  return {
+    async read({ service, account }) {
+      const result = await runCredentialJson("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        windowsCredentialScript("read")
+      ], {
+        service,
+        account
+      }, runCommand);
+      return result.token || "";
+    },
+    async write({ service, account, login, token }) {
+      await runCredentialJson("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        windowsCredentialScript("write")
+      ], {
+        service,
+        account,
+        login,
+        token
+      }, runCommand);
+    },
+    async delete({ service, account }) {
+      await runCredentialJson("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        windowsCredentialScript("delete")
+      ], {
+        service,
+        account
+      }, runCommand);
+    }
+  };
+}
+
+function createMacOSCredentialAdapter(runCommand) {
+  return {
+    async read({ service, account }) {
+      const result = await runCommand("security", [
+        "find-generic-password",
+        "-s",
+        service,
+        "-a",
+        account,
+        "-w"
+      ]);
+      return result.stdout.trim();
+    },
+    async write({ service, account, login, token }) {
+      await runCommand("security", [
+        "add-generic-password",
+        "-U",
+        "-s",
+        service,
+        "-a",
+        account,
+        "-l",
+        "Source Companion GitHub Token",
+        "-D",
+        "application password",
+        "-j",
+        login,
+        "-w",
+        token
+      ]);
+    },
+    async delete({ service, account }) {
+      await runCommand("security", [
+        "delete-generic-password",
+        "-s",
+        service,
+        "-a",
+        account
+      ], { allowFailure: true });
+    }
+  };
+}
+
+function createLinuxCredentialAdapter(runCommand) {
+  return {
+    async read({ service, account }) {
+      const result = await runCommand("secret-tool", [
+        "lookup",
+        "service",
+        service,
+        "account",
+        account
+      ]);
+      return result.stdout.trim();
+    },
+    async write({ service, account, login, token }) {
+      await runCommand("secret-tool", [
+        "store",
+        "--label",
+        "Source Companion GitHub Token",
+        "service",
+        service,
+        "account",
+        account,
+        "login",
+        login
+      ], {
+        stdin: token
+      });
+    },
+    async delete({ service, account }) {
+      await runCommand("secret-tool", [
+        "clear",
+        "service",
+        service,
+        "account",
+        account
+      ], { allowFailure: true });
+    }
+  };
+}
+
+async function runCredentialJson(command, args, payload, runCommand) {
+  const result = await runCommand(command, args, {
+    stdin: JSON.stringify(payload)
+  });
+  const text = clean(result.stdout);
+  return text ? JSON.parse(text) : {};
+}
+
+function runCredentialCommand(command, args = [], options = {}) {
+  if (typeof spawn !== "function") {
+    return Promise.reject(createGitHubError({
+      kind: "secure-storage-unavailable",
+      message: "Credential-store commands are not available in this runtime."
+    }));
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true
+    });
+    let stdoutText = "";
+    let stderrText = "";
+    child.stdout.on("data", (chunk) => {
+      stdoutText += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderrText += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      reject(createGitHubError({
+        kind: "secure-storage-unavailable",
+        message: "Operating system credential store is not available.",
+        raw: error
+      }));
+    });
+    child.on("close", (code) => {
+      if (code === 0 || options.allowFailure) {
+        resolve({ stdout: stdoutText, stderr: stderrText, code });
+        return;
+      }
+      reject(createGitHubError({
+        kind: "secure-storage-unavailable",
+        message: clean(stderrText) || `Credential-store command failed with exit code ${code}.`,
+        raw: { command, args: args.map(redactCredentialArg), code, stderr: stderrText }
+      }));
+    });
+
+    if (options.stdin !== undefined) {
+      child.stdin.end(String(options.stdin));
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
+function windowsCredentialScript(action) {
+  const operation = clean(action);
+  return `
+$ErrorActionPreference = "Stop"
+$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$target = "$($payload.service)/$($payload.account)"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class SourceCompanionCredMan {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public struct CREDENTIAL {
+    public UInt32 Flags;
+    public UInt32 Type;
+    public string TargetName;
+    public string Comment;
+    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+    public UInt32 CredentialBlobSize;
+    public IntPtr CredentialBlob;
+    public UInt32 Persist;
+    public UInt32 AttributeCount;
+    public IntPtr Attributes;
+    public string TargetAlias;
+    public string UserName;
+  }
+  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern bool CredWrite(ref CREDENTIAL credential, UInt32 flags);
+  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern bool CredRead(string target, UInt32 type, UInt32 flags, out IntPtr credential);
+  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern bool CredDelete(string target, UInt32 type, UInt32 flags);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  public static extern void CredFree(IntPtr credential);
+}
+"@
+if ("${operation}" -eq "write") {
+  $bytes = [Text.Encoding]::Unicode.GetBytes([string]$payload.token)
+  $blob = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+  try {
+    [Runtime.InteropServices.Marshal]::Copy($bytes, 0, $blob, $bytes.Length)
+    $credential = New-Object SourceCompanionCredMan+CREDENTIAL
+    $credential.Type = 1
+    $credential.TargetName = $target
+    $credential.UserName = [string]$payload.login
+    $credential.CredentialBlobSize = $bytes.Length
+    $credential.CredentialBlob = $blob
+    $credential.Persist = 2
+    if (-not [SourceCompanionCredMan]::CredWrite([ref]$credential, 0)) {
+      throw "Windows Credential Manager write failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+    }
+    "{}"
+  } finally {
+    [Runtime.InteropServices.Marshal]::FreeHGlobal($blob)
+  }
+} elseif ("${operation}" -eq "read") {
+  $ptr = [IntPtr]::Zero
+  if (-not [SourceCompanionCredMan]::CredRead($target, 1, 0, [ref]$ptr)) {
+    "{}"
+  } else {
+    try {
+      $credential = [Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][SourceCompanionCredMan+CREDENTIAL])
+      $token = [Runtime.InteropServices.Marshal]::PtrToStringUni($credential.CredentialBlob, $credential.CredentialBlobSize / 2)
+      @{ token = $token } | ConvertTo-Json -Compress
+    } finally {
+      [SourceCompanionCredMan]::CredFree($ptr)
+    }
+  }
+} elseif ("${operation}" -eq "delete") {
+  [void][SourceCompanionCredMan]::CredDelete($target, 1, 0)
+  "{}"
+}
+`;
+}
+
+function normalizeOAuthDeviceError(data) {
+  const error = clean(data && data.error);
+  if (error === "slow_down") {
+    return createGitHubError({
+      kind: "github-secondary-rate-limit",
+      message: clean(data.error_description) || "GitHub asked to slow down device login polling."
+    });
+  }
+  if (error === "expired_token") {
+    return createGitHubError({
+      kind: "github-login-expired",
+      message: clean(data.error_description) || "GitHub device login expired."
+    });
+  }
+  if (error === "access_denied") {
+    return createGitHubError({
+      kind: "github-login-cancelled",
+      message: clean(data.error_description) || "GitHub device login was cancelled."
+    });
+  }
+  return createGitHubError({
+    kind: "github-api-error",
+    message: clean(data && data.error_description) || "GitHub device login failed.",
+    raw: data || null
+  });
 }
 
 function normalizeTokenFreeAuthStatus(auth) {
@@ -706,6 +1476,29 @@ function normalizeTokenFreeAuthStatus(auth) {
     lastValidatedAt: source.lastValidatedAt || null,
     error: source.error ? normalizeGitHubError(source.error) : null
   };
+}
+
+function normalizeDeviceLoginStatus(status) {
+  const source = status || {};
+  const auth = source.auth ? normalizeTokenFreeAuthStatus(source.auth) : null;
+  return {
+    status: clean(source.status) || (auth && auth.authenticated ? "authenticated" : "idle"),
+    loginId: clean(source.loginId) || null,
+    userCode: clean(source.userCode || source.user_code) || null,
+    verificationUrl: clean(source.verificationUrl || source.verification_uri || source.verification_uri_complete) || null,
+    expiresAt: clean(source.expiresAt || source.expires_at) || null,
+    intervalSeconds: parseInteger(source.intervalSeconds || source.interval) || null,
+    authenticated: auth ? auth.authenticated : false,
+    auth,
+    error: source.error ? normalizeGitHubError(source.error) : null
+  };
+}
+
+function createDeviceLoginStatusFailure(kind, message) {
+  return normalizeDeviceLoginStatus({
+    status: "failed",
+    error: createGitHubError({ kind, message })
+  });
 }
 
 function normalizeRepositoryResult(result) {
@@ -1232,6 +2025,63 @@ function parseRateLimit(headers, retryAfterSeconds) {
   };
 }
 
+function defaultAuthMetadataPath() {
+  if (!path || !os) return "";
+  const home = os.homedir && os.homedir();
+  const base = process.platform === "win32"
+    ? process.env.LOCALAPPDATA || (home ? path.join(home, "AppData", "Local") : "")
+    : process.platform === "darwin"
+      ? (home ? path.join(home, "Library", "Application Support") : "")
+      : process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "");
+  return base ? path.join(base, "Source Companion", DEFAULT_AUTH_METADATA_FILENAME) : "";
+}
+
+function defaultGitHubClientId() {
+  return clean(process.env.SOURCE_COMPANION_GITHUB_CLIENT_ID || process.env.GITHUB_OAUTH_CLIENT_ID);
+}
+
+function accountKeyForLogin(login) {
+  return `github.com:${clean(login)}`;
+}
+
+function expiresAtFromSeconds(expiresIn, now) {
+  const seconds = parseInteger(expiresIn);
+  const date = typeof now === "function" ? now() : new Date();
+  const timestamp = date instanceof Date ? date.getTime() : new Date(date).getTime();
+  if (!seconds || !Number.isFinite(timestamp)) return null;
+  return new Date(timestamp + seconds * 1000).toISOString();
+}
+
+async function openUrlInSystemBrowser(url) {
+  const target = clean(url);
+  if (!target) return;
+  const platform = process.platform;
+  if (platform === "win32") {
+    await runCredentialCommand("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$target = [Console]::In.ReadToEnd(); if ($target) { Start-Process -FilePath $target }"
+    ], {
+      stdin: target,
+      allowFailure: true
+    });
+    return;
+  }
+  if (platform === "darwin") {
+    await runCredentialCommand("open", [target], { allowFailure: true });
+    return;
+  }
+  await runCredentialCommand("xdg-open", [target], { allowFailure: true });
+}
+
+function redactCredentialArg(value) {
+  const text = clean(value);
+  if (!text) return text;
+  if (/token|password|secret/i.test(text)) return "[redacted]";
+  return text;
+}
+
 function getHeader(headers, name) {
   if (!headers) return "";
   if (typeof headers.get === "function") return headers.get(name) || "";
@@ -1260,6 +2110,11 @@ function requireString(value, name) {
   return normalized;
 }
 
+function normalizeRequest(request) {
+  if (!request || typeof request !== "object" || Array.isArray(request)) return {};
+  return { ...request };
+}
+
 function clean(value) {
   return String(value || "").trim();
 }
@@ -1275,11 +2130,21 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     GitHubApiClient,
     GitHubBridgeClient,
+    GitHubAuthBridgeBackend,
+    GitHubDeviceFlow,
+    DesktopSecureTokenStore,
+    FileSecureTokenMetadataStore,
     MemorySecureTokenStore,
     UnavailableSecureTokenStore,
     createGitHubApiClient,
+    createGitHubAuthBridgeBackend,
     createGitHubBridgeClient,
+    createDesktopGitHubAuthBridgeBackend,
+    createDesktopSecureTokenStore,
+    createGitHubDeviceFlow,
+    createPlatformCredentialAdapter,
     normalizeGitHubError,
+    normalizeDeviceLoginStatus,
     normalizePullRequestReviewContextResult,
     normalizePullRequestCheckResult,
     normalizePullRequest,

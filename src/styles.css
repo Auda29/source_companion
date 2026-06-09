@@ -1742,6 +1742,13 @@ textarea {
   border-color: var(--accent);
 }
 
+.path-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 .visibility-options {
   border: 1px solid var(--border);
   border-radius: 6px;

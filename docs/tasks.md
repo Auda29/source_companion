@@ -335,12 +335,13 @@ Stand 2026-06-09: Die zu breite Desktop-GitHub-/Paritaetsaufgabe `T51` wurde dur
 
 ### T25 - AI Commit Message Konzept ausarbeiten
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P3`
 - Abhaengigkeiten: `T14`
 - Definition of Done: Produktentscheidung fuer AI Commit Message ist dokumentiert; entschieden ist, ob ein leeres Commit-Message-Feld direkt eine Message generiert oder zuerst bestaetigt; Datenbasis, Datenschutz, Kosten, Fehlerfaelle und UI-Grenzen sind beschrieben.
 - Implementierungsnotiz: Codex-Verhalten als Referenz: Wenn Commit Message leer bleibt, kann eine Message generiert werden. Feature darf kein AI Chat, kein Agent-Loop und kein autonomer Commit werden; Nutzer muss Vorschlag pruefen und Commit selbst ausloesen.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 16:23 CEST umgesetzt: `docs/ai-commit-message-concept.md` dokumentiert AI Commit Message als spaetere optionale Commit-Box-Funktion mit expliziter Bestaetigung bei leerem Message-Feld, staged Diff als Datenbasis, Datenschutz-/Credential-Grenzen, Kosten-/Rate-Limit-/Fehlerfaelle und UI-Grenzen ohne Chat, Agent-Loop oder autonomen Commit. `docs/plan.md` verweist auf die Entscheidung.
+- Review-Ergebnis: Bestanden am 2026-06-09. `docs/ai-commit-message-concept.md` dokumentiert die Produktentscheidung, dass AI Commit Message spaeter optional ist, leere Message-Felder nicht still generieren, sondern eine explizite Bestaetigung brauchen, staged Diff die erste Datenbasis bleibt und Datenschutz, Kosten-/Rate-Limit-/Fehlerfaelle sowie UI-Grenzen ohne Chat, Agent-Loop oder autonomen Commit beschrieben sind. `docs/plan.md` verweist konsistent auf diese Entscheidung.
 - Offene Review-Punkte: -
 
 ### T26 - Source-Control-Toolbar und View Modes bauen
@@ -443,32 +444,34 @@ Stand 2026-06-09: Die zu breite Desktop-GitHub-/Paritaetsaufgabe `T51` wurde dur
 
 ### T49 - Kontrollierten Desktop-Bridge-Vertrag fuer Git und Repository-State bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T6`, `T7`, `T8`, `T48`
 - Definition of Done: Die Tauri-Bridge bietet nur explizit whitelisted Commands fuer Repository oeffnen, Git-Status, Diff, Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen und Git Output; alle Git-Ausfuehrungen nutzen den bestehenden Git CLI Wrapper und die Operation Queue; stdout, stderr, Exit-Code und strukturierte Fehler folgen dem dokumentierten Fehlervertrag; Renderer-Code nutzt eine gemeinsame Bridge-Fassade statt direkter Shell- oder Dateisystemzugriffe.
 - Implementierungsnotiz: Bridge-API klein und versionskontrollbezogen halten. Keine freien Command-Runner, keine generische Filesystem-API und keine Token-Werte an den Renderer liefern.
 - Notiz: 2026-06-09 15:10 CEST umgesetzt: `src/desktop-bridge.js` definiert die gemeinsame Renderer-Fassade, whitelisted Tauri-Command-Namen und ein testbares Backend, das Repository-State, Diff sowie Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen ueber `GitOperationQueue` und den bestehenden Git Wrapper ausfuehrt; `src/main.js` bevorzugt die Fassade vor Web-/CommonJS-Fallbacks. 2026-06-09 15:45 CEST Review-Punkte adressiert: `src-tauri/src/lib.rs` registriert die zehn erlaubten `#[tauri::command]`-Handler inklusive `invoke_handler(tauri::generate_handler![...])`; die Handler starten einen persistenten `src/desktop-bridge-worker.js`, der `createDesktopBridgeBackend()` mit bestehendem Git CLI Wrapper und `GitOperationQueue` nutzt. `src/desktop-bridge.js` kapselt Tauri-Payloads als `{ request: ... }`, `docs/desktop-bridge.md` dokumentiert native Handler und Worker-Vertrag, und `tests/desktop-bridge.test.js` prueft Handler-Registrierung sowie Worker-Queue-Handoff. 2026-06-09 16:08 CEST Review-Punkt erneut adressiert: Native Worker-Starts und der Handoff-Test nutzen jetzt `--preserve-symlinks` und `--preserve-symlinks-main`, sodass `src/desktop-bridge-worker.js` in der aktuellen Desktop-/Testumgebung startet und die Queue-Anfrage beantwortet. Fokussierter Bridge-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` in dieser Umgebung nicht installiert ist.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. Die Desktop-Bridge bietet nur die explizit whitelisted Repository-Commands fuer Open, Status, Diff, Datei-/Hunk-/Commit-/Branch-/Sync-/Stash-Aktionen und Git Output; Renderer-Code nutzt die gemeinsame Bridge-Fassade, Tauri registriert die erlaubten Handler, und der persistente Worker fuehrt die bestehenden Repository-Module ueber `GitOperationQueue` und Git CLI Wrapper aus. Fokussierter Bridge-Test und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` in dieser Umgebung nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T50 - Native Ordnerdialoge und Desktop-Watcher verdrahten
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T9`, `T39`, `T40`, `T49`
 - Definition of Done: Repo oeffnen, Clone-Zielordner und Publish-Zielordner nutzen native Desktop-Dialoge ueber erlaubte Bridge-Commands; abgebrochene, ungueltige und nicht mehr vorhandene Pfade werden lesbar behandelt; pro geoeffnetem Repository startet ein Desktop-faehiger Status-Watcher und wird beim Tab-Schliessen beendet; Watcher-Refreshes bleiben entprellt und kollidieren nicht mit laufenden Git-Operationen.
 - Implementierungsnotiz: Dialoge duerfen nur konkrete Pfade fuer erlaubte Git-Flows liefern. Watcher und Refresh sollen denselben Repository-State wie die Full UI aktualisieren.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 17:48 CEST umgesetzt: Open-, Clone-, GitHub-Clone- und Publish-Dialoge haben Desktop-Browse-Aktionen, die ueber explizite Tauri-Bridge-Commands native Ordnerdialoge nutzen und Abbruch, ungueltige sowie nicht vorhandene Pfade lesbar behandeln. Die Desktop-Bridge bietet Watch-Start/Get/Stop-Commands im persistenten Worker, startet pro Repository-Kontext einen `RepositoryStatusWatcher`, liefert Snapshot/State/Fehler an den Renderer und schliesst den Watcher beim Tab-Schliessen. Fokussierte Desktop-/Renderer-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` in dieser Umgebung nicht installiert ist.
+- Review-Ergebnis: Bestanden am 2026-06-09. Native Open-/Clone-/GitHub-Clone-/Publish-Ordnerdialoge sind als whitelisted Tauri-Commands registriert, liefern nur konkrete Ordnerpfade bzw. Abbruch-/Fehlerzustaende zurueck und werden im Renderer in die passenden Formularfelder uebernommen. Desktop-Watcher werden pro Repository-Kontext ueber den persistenten Bridge-Worker gestartet, liefern Snapshot/State/Fehler an den Renderer, nutzen den bestehenden debounced `RepositoryStatusWatcher` und werden beim Tab-Schliessen gestoppt. Fokussierte Desktop-/Renderer-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags; Rust-Format/Build konnte nicht ausgefuehrt werden, weil `cargo` in dieser Umgebung nicht installiert ist.
 - Offene Review-Punkte: -
 
 ### T52 - Desktop GitHub Auth-Bridge und Secure Token Store bauen
 
-- Status: `todo`
+- Status: `review`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T38`, `T49`
 - Definition of Done: Die Tauri-/Backend-Bridge bietet explizit whitelisted GitHub-Auth-Commands fuer Device Login starten, Login-Status/Polling, Login abbrechen, Logout und Auth-Status laden; Tokens werden ueber den in `docs/github-auth-decision.md` beschriebenen SecureTokenStore gelesen, geschrieben und geloescht; Token-Werte erscheinen nie im Renderer, in `localStorage`, Repository-Kontexten, Remote-URLs oder Git-Argumenten; fehlende Auth, fehlende Scopes, widerrufene Tokens, Rate-Limits, Netzwerkfehler, Login-Ablauf und nicht verfuegbarer Secure Storage folgen dem dokumentierten Fehlervertrag.
 - Implementierungsnotiz: GitHub OAuth Device Flow und OS-Credential-Store zuerst sauber kapseln. Der Renderer darf nur Status, User Code, Verification URL, Ablaufzeit und lesbare Fehler sehen; kein eigenes SSH-Key-Management und keine GitHub-Dashboard-Funktionen aufnehmen.
+- Notiz: 2026-06-09 18:55 CEST Review-Punkte adressiert: `createDesktopBridgeBackend()` erstellt im Default-Pfad jetzt ein `GitHubAuthBridgeBackend` mit backend-only `GitHubDeviceFlow` und `DesktopSecureTokenStore`; der Device Flow nutzt die GitHub-OAuth-Endpunkte im Worker, optionalen Systembrowser-Start und tokenfreies Renderer-Polling. `DesktopSecureTokenStore` liest/schreibt/loescht Tokens ueber einen OS-Credential-Store-Adapter mit separater nicht-sensitiver Metadatei; Windows Credential Manager, macOS Keychain und Linux Secret Service/libsecret sind als Plattformpfade gekapselt. `docs/desktop-bridge.md` dokumentiert Default-Pfad und OAuth-Client-ID-Konfiguration. Fokussierte GitHub-/Desktop-Bridge-Tests bestanden mit Preserve-Symlink-Flags.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 

@@ -57,6 +57,12 @@
     });
   });
 
+  document.querySelectorAll("[data-folder-dialog]").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleFolderDialog(button.dataset.folderDialog, button);
+    });
+  });
+
   document.querySelectorAll(".dialog-body").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -152,6 +158,63 @@
     }
     if (nameInput && !clean(nameInput.value)) {
       nameInput.value = displayNameFromPath(active.path);
+    }
+  }
+
+  async function handleFolderDialog(flow, button) {
+    if (!state.desktopBridge) {
+      setMessage("error", "Native folder dialogs are only available in the desktop app.");
+      render();
+      return;
+    }
+
+    const method = {
+      open: "pickRepositoryFolder",
+      clone: "pickCloneTargetFolder",
+      github: "pickCloneTargetFolder",
+      publish: "pickPublishFolder"
+    }[flow];
+    const field = {
+      open: "path",
+      clone: "target",
+      github: "target",
+      publish: "path"
+    }[flow];
+    if (!method || typeof state.desktopBridge[method] !== "function") return;
+
+    const form = button && typeof button.closest === "function" ? button.closest("form") : null;
+    const input = form && typeof form.querySelector === "function"
+      ? form.querySelector(`input[name="${field}"]`)
+      : null;
+
+    try {
+      const result = await state.desktopBridge[method]({ flow });
+      if (!result || result.canceled) {
+        setMessage("error", "Folder selection canceled.");
+        render();
+        return;
+      }
+      if (!result.ok || !isAbsolutePath(result.path)) {
+        const message = result && result.error && result.error.message
+          ? result.error.message
+          : "Choose an existing local folder.";
+        setMessage("error", message);
+        render();
+        return;
+      }
+
+      if (input) input.value = result.path;
+      if (flow === "publish" && form) {
+        const nameInput = form.querySelector('input[name="name"]');
+        if (nameInput && !clean(nameInput.value)) {
+          nameInput.value = displayNameFromPath(result.path);
+        }
+      }
+      setMessage("success", "Folder selected.");
+      render();
+    } catch (error) {
+      setMessage("error", error && error.message ? error.message : "Native folder dialog failed.");
+      render();
     }
   }
 
@@ -2395,6 +2458,13 @@
   }
 
   function resolveRepositoryStatusWatcher(loadState) {
+    if (desktopBridge &&
+      typeof desktopBridge.startRepositoryWatch === "function" &&
+      typeof desktopBridge.getRepositoryWatch === "function" &&
+      typeof desktopBridge.stopRepositoryWatch === "function") {
+      return createDesktopRepositoryStatusWatcher(desktopBridge);
+    }
+
     if (window.SourceCompanionRepositoryStatusWatcher &&
       typeof window.SourceCompanionRepositoryStatusWatcher.RepositoryStatusWatcher === "function") {
       return new window.SourceCompanionRepositoryStatusWatcher.RepositoryStatusWatcher({
@@ -2421,6 +2491,111 @@
     }
 
     return null;
+  }
+
+  function createDesktopRepositoryStatusWatcher(bridge) {
+    return {
+      watchRepository(options = {}) {
+        return createDesktopRepositoryWatchHandle(bridge, options);
+      }
+    };
+  }
+
+  function createDesktopRepositoryWatchHandle(bridge, {
+    repositoryId,
+    repositoryPath,
+    githubAuthProvider = () => null,
+    onState = () => {},
+    onError = () => {}
+  } = {}) {
+    const pollEveryMs = 500;
+    const setIntervalFn = window.setInterval || (typeof setInterval === "function" ? setInterval : null);
+    const clearIntervalFn = window.clearInterval || (typeof clearInterval === "function" ? clearInterval : null);
+    let closed = false;
+    let timer = null;
+    let snapshot = {
+      repositoryId,
+      repositoryPath,
+      status: "starting",
+      pendingReasons: [],
+      watchTargets: [],
+      errors: []
+    };
+    let lastStateToken = null;
+    let lastErrorToken = null;
+
+    const request = () => ({
+      repositoryId,
+      repositoryPath,
+      githubAuth: githubAuthProvider()
+    });
+
+    const applyWatchResult = (result) => {
+      if (closed || !result) return;
+      if (result.snapshot) snapshot = result.snapshot;
+
+      const stateToken = result.snapshot
+        ? `${result.snapshot.refreshCount || 0}:${result.snapshot.lastRefreshCompletedAt || ""}`
+        : "";
+      if (result.latestState && stateToken !== lastStateToken) {
+        lastStateToken = stateToken;
+        onState(result.latestState, { repositoryId, reasons: result.snapshot && result.snapshot.pendingReasons || [] });
+      }
+
+      if (result.latestError) {
+        const errorToken = `${result.latestError.kind || ""}:${result.latestError.message || ""}`;
+        if (errorToken !== lastErrorToken) {
+          lastErrorToken = errorToken;
+          onError(result.latestError, { repositoryId });
+        }
+      }
+    };
+
+    const poll = async () => {
+      if (closed) return;
+      try {
+        applyWatchResult(await bridge.getRepositoryWatch(request()));
+      } catch (error) {
+        if (!closed) {
+          onError({
+            kind: "repository-watch-error",
+            message: error && error.message ? error.message : "Desktop repository watcher failed."
+          }, { repositoryId });
+        }
+      }
+    };
+
+    Promise.resolve(bridge.startRepositoryWatch(request()))
+      .then(applyWatchResult)
+      .catch((error) => {
+        if (!closed) {
+          onError({
+            kind: "repository-watch-error",
+            message: error && error.message ? error.message : "Desktop repository watcher could not start."
+          }, { repositoryId });
+        }
+      });
+
+    if (setIntervalFn) {
+      timer = setIntervalFn(poll, pollEveryMs);
+    }
+
+    return {
+      close() {
+        closed = true;
+        if (timer && clearIntervalFn) clearIntervalFn(timer);
+        timer = null;
+        Promise.resolve(bridge.stopRepositoryWatch(request())).catch(() => {});
+      },
+      getSnapshot() {
+        return {
+          ...snapshot,
+          pendingReasons: [...(snapshot.pendingReasons || [])],
+          watchTargets: [...(snapshot.watchTargets || [])],
+          errors: [...(snapshot.errors || [])]
+        };
+      }
+    };
   }
 
   function resolveRepositoryDiffLoader() {
@@ -2738,13 +2913,30 @@
     if (window.SourceCompanionGitHubBackendBridge) return window.SourceCompanionGitHubBackendBridge;
     if (window.SourceCompanionGitHubBridge) return window.SourceCompanionGitHubBridge;
 
+    const desktopBridge = resolveDesktopRepositoryBridge();
+    if (desktopBridge && typeof desktopBridge.getGitHubAuthStatus === "function") {
+      return {
+        getAuthStatus: () => desktopBridge.getGitHubAuthStatus(),
+        startDeviceLogin: (options) => desktopBridge.startGitHubDeviceLogin(options || {}),
+        getLoginStatus: (options) => desktopBridge.getGitHubDeviceLoginStatus(options || {}),
+        pollDeviceLogin: (options) => desktopBridge.pollGitHubDeviceLogin(options || {}),
+        cancelDeviceLogin: (options) => desktopBridge.cancelGitHubDeviceLogin(options || {}),
+        login: (options) => desktopBridge.loginGitHub(options || {}),
+        logout: (options) => desktopBridge.logoutGitHub(options || {})
+      };
+    }
+
     const tauriInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
     if (typeof tauriInvoke !== "function") return null;
 
     return {
-      getAuthStatus: () => tauriInvoke("github_get_auth_status"),
-      login: () => tauriInvoke("github_login"),
-      logout: (options) => tauriInvoke("github_logout", options || {}),
+      getAuthStatus: () => tauriInvoke("github_get_auth_status", { request: {} }),
+      startDeviceLogin: (options) => tauriInvoke("github_device_login_start", { request: options || {} }),
+      getLoginStatus: (options) => tauriInvoke("github_device_login_status", { request: options || {} }),
+      pollDeviceLogin: (options) => tauriInvoke("github_device_login_poll", { request: options || {} }),
+      cancelDeviceLogin: (options) => tauriInvoke("github_device_login_cancel", { request: options || {} }),
+      login: (options) => tauriInvoke("github_login", { request: options || {} }),
+      logout: (options) => tauriInvoke("github_logout", { request: options || {} }),
       listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", options || {}),
       searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {}),
       createRepository: (options) => tauriInvoke("github_create_repository", options || {}),

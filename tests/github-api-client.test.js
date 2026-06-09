@@ -1,10 +1,16 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
+  FileSecureTokenMetadataStore,
   MemorySecureTokenStore,
+  createDesktopSecureTokenStore,
+  createGitHubDeviceFlow,
   createGitHubBridgeClient,
   createGitHubApiClient
 } = require("../src/github-api-client");
@@ -75,6 +81,157 @@ test("renderer bridge client returns token-free auth and repository results", as
   assert.equal(result.repositories[0].fullName, "octo/source-companion");
   assert.equal(result.repositories[0].cloneUrl, "https://github.com/octo/source-companion.git");
   assert.equal(result.repositories[0].stars, 4);
+});
+
+test("renderer bridge client handles explicit device login statuses without tokens", async () => {
+  const calls = [];
+  const client = createGitHubBridgeClient({
+    startDeviceLogin: async (options) => {
+      calls.push(["start", options]);
+      return {
+        status: "pending",
+        loginId: "login-1",
+        userCode: "ABCD-1234",
+        verificationUrl: "https://github.com/login/device",
+        expiresAt: "2026-06-09T18:15:00.000Z",
+        intervalSeconds: 5,
+        deviceCode: "must-not-leak",
+        token: "must-not-leak"
+      };
+    },
+    pollDeviceLogin: async (options) => {
+      calls.push(["poll", options]);
+      return {
+        status: "authenticated",
+        auth: {
+          authenticated: true,
+          user: "octo",
+          scopes: ["repo", "read:user"],
+          tokenSource: "device-flow",
+          token: "must-not-leak"
+        },
+        token: "must-not-leak"
+      };
+    },
+    cancelDeviceLogin: async () => ({
+      status: "cancelled",
+      token: "must-not-leak"
+    })
+  });
+
+  const started = await client.startDeviceLogin({ openBrowser: true });
+  assert.equal(started.status, "pending");
+  assert.equal(started.userCode, "ABCD-1234");
+  assert.equal(started.deviceCode, undefined);
+  assert.equal(started.token, undefined);
+
+  const completed = await client.pollDeviceLogin({ loginId: "login-1" });
+  assert.equal(completed.status, "authenticated");
+  assert.equal(completed.auth.authenticated, true);
+  assert.equal(completed.auth.token, undefined);
+  assert.equal(completed.token, undefined);
+
+  const cancelled = await client.cancelDeviceLogin();
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.token, undefined);
+  assert.deepEqual(calls, [
+    ["start", { openBrowser: true }],
+    ["poll", { loginId: "login-1" }]
+  ]);
+});
+
+test("github device flow uses backend-only OAuth endpoints and opens verification url", async () => {
+  const requests = [];
+  const opened = [];
+  const flow = createGitHubDeviceFlow({
+    clientId: "client-1",
+    now: () => new Date("2026-06-09T18:00:00.000Z"),
+    openExternal: async (url) => {
+      opened.push(url);
+    },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options, body: JSON.parse(options.body) });
+      if (url.endsWith("/login/device/code")) {
+        return createResponse(200, {
+          device_code: "device-secret",
+          user_code: "ABCD-1234",
+          verification_uri: "https://github.com/login/device",
+          expires_in: 900,
+          interval: 7
+        });
+      }
+      return createResponse(200, {
+        access_token: "secret-token",
+        scope: "repo, read:user"
+      });
+    }
+  });
+
+  const started = await flow.startDeviceLoginSession({
+    scopes: ["repo", "read:user"],
+    openBrowser: true
+  });
+  assert.equal(started.deviceCode, "device-secret");
+  assert.equal(started.userCode, "ABCD-1234");
+  assert.equal(started.expiresAt, "2026-06-09T18:15:00.000Z");
+  assert.equal(started.intervalSeconds, 7);
+  assert.deepEqual(opened, ["https://github.com/login/device"]);
+
+  const polled = await flow.pollDeviceLogin({ deviceCode: "device-secret" });
+  assert.equal(polled.token, "secret-token");
+  assert.deepEqual(polled.scopes, ["repo", "read:user"]);
+  assert.deepEqual(requests.map((request) => request.body), [
+    {
+      client_id: "client-1",
+      scope: "repo read:user"
+    },
+    {
+      client_id: "client-1",
+      device_code: "device-secret",
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+    }
+  ]);
+});
+
+test("desktop secure token store keeps token in credential adapter and metadata separate", async (t) => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "source-companion-auth-"));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+  const metadataPath = path.join(tempDir, "github-auth.json");
+  const credentials = new Map();
+  const store = createDesktopSecureTokenStore({
+    metadataStore: new FileSecureTokenMetadataStore({ filePath: metadataPath }),
+    credentialAdapter: {
+      async read({ account }) {
+        return credentials.get(account) || "";
+      },
+      async write({ account, token }) {
+        credentials.set(account, token);
+      },
+      async delete({ account }) {
+        credentials.delete(account);
+      }
+    }
+  });
+
+  await store.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow",
+    lastValidatedAt: "2026-06-09T18:00:00.000Z"
+  });
+
+  const metadata = JSON.parse(await fs.promises.readFile(metadataPath, "utf8"));
+  assert.equal(metadata.token, undefined);
+  assert.equal(credentials.get("github.com:octo"), "secret-token");
+
+  const record = await store.read();
+  assert.equal(record.token, "secret-token");
+  assert.equal(record.login, "octo");
+
+  await store.delete();
+  assert.equal(credentials.has("github.com:octo"), false);
+  assert.equal(await store.read(), null);
 });
 
 test("renderer bridge client creates repositories without exposing tokens", async () => {

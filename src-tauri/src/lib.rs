@@ -13,6 +13,7 @@ use std::{
     },
     thread,
 };
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 struct DesktopBridgeState {
     worker: DesktopBridgeWorker,
@@ -232,6 +233,65 @@ fn format_worker_error(error: Option<Value>) -> String {
     format!("{kind}: {message}")
 }
 
+fn pick_folder(app: tauri::AppHandle, title: &str) -> Result<Value, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .set_can_create_directories(true)
+        .blocking_pick_folder();
+
+    let Some(file_path) = picked else {
+        return Ok(json!({
+            "ok": false,
+            "canceled": true,
+            "path": Value::Null,
+            "message": "Folder selection canceled."
+        }));
+    };
+
+    let path = file_path_to_path(file_path)?;
+    let path_text = path.to_string_lossy().to_string();
+    if !path.is_dir() {
+        return Ok(json!({
+            "ok": false,
+            "canceled": false,
+            "path": path_text,
+            "error": {
+                "kind": "native-folder-not-found",
+                "message": "Selected folder does not exist or is not a directory."
+            }
+        }));
+    }
+
+    Ok(json!({
+        "ok": true,
+        "canceled": false,
+        "path": path_text
+    }))
+}
+
+fn file_path_to_path(file_path: FilePath) -> Result<PathBuf, String> {
+    file_path
+        .into_path()
+        .map_err(|error| format!("Selected folder path could not be resolved: {error}"))
+}
+
+#[tauri::command]
+fn repository_pick_folder(app: tauri::AppHandle) -> Result<Value, String> {
+    pick_folder(app, "Open Repository")
+}
+
+#[tauri::command]
+fn repository_pick_clone_target_folder(app: tauri::AppHandle) -> Result<Value, String> {
+    pick_folder(app, "Choose Clone Target Folder")
+}
+
+#[tauri::command]
+fn repository_pick_publish_folder(app: tauri::AppHandle) -> Result<Value, String> {
+    pick_folder(app, "Choose Local Folder to Publish")
+}
+
 #[tauri::command]
 fn repository_open(
     state: tauri::State<'_, DesktopBridgeState>,
@@ -312,14 +372,98 @@ fn repository_get_git_output(
     state.invoke("getGitOutput", request)
 }
 
+#[tauri::command]
+fn repository_watch_start(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("startRepositoryWatch", request)
+}
+
+#[tauri::command]
+fn repository_watch_get(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("getRepositoryWatch", request)
+}
+
+#[tauri::command]
+fn repository_watch_stop(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("stopRepositoryWatch", request)
+}
+
+#[tauri::command]
+fn github_get_auth_status(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("getGitHubAuthStatus", request)
+}
+
+#[tauri::command]
+fn github_device_login_start(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("startGitHubDeviceLogin", request)
+}
+
+#[tauri::command]
+fn github_device_login_status(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("getGitHubDeviceLoginStatus", request)
+}
+
+#[tauri::command]
+fn github_device_login_poll(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("pollGitHubDeviceLogin", request)
+}
+
+#[tauri::command]
+fn github_device_login_cancel(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("cancelGitHubDeviceLogin", request)
+}
+
+#[tauri::command]
+fn github_login(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("loginGitHub", request)
+}
+
+#[tauri::command]
+fn github_logout(
+    state: tauri::State<'_, DesktopBridgeState>,
+    request: Option<Value>,
+) -> Result<Value, String> {
+    state.invoke("logoutGitHub", request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let desktop_bridge_state =
         DesktopBridgeState::new().expect("error while starting Source Companion desktop bridge");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(desktop_bridge_state)
         .invoke_handler(tauri::generate_handler![
+            repository_pick_folder,
+            repository_pick_clone_target_folder,
+            repository_pick_publish_folder,
             repository_open,
             repository_load_state,
             repository_load_file_diff,
@@ -329,7 +473,17 @@ pub fn run() {
             repository_run_branch_action,
             repository_run_sync_action,
             repository_run_stash_action,
-            repository_get_git_output
+            repository_get_git_output,
+            repository_watch_start,
+            repository_watch_get,
+            repository_watch_stop,
+            github_get_auth_status,
+            github_device_login_start,
+            github_device_login_status,
+            github_device_login_poll,
+            github_device_login_cancel,
+            github_login,
+            github_logout
         ])
         .run(tauri::generate_context!())
         .expect("error while running Source Companion");
