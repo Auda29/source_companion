@@ -121,6 +121,71 @@ test("github clone dialog starts clone with selected repository clone URL", () =
   assert.equal(cloneRequest.targetPath, "C:\\code\\source-companion");
 });
 
+test("publish dialog starts publish with local folder and repository options", () => {
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const publishForm = new FakeForm("publish", {
+    path: "C:\\code\\project",
+    name: "project",
+    description: "Focused source control",
+    visibility: "private",
+    initIfNeeded: "on"
+  });
+  const document = new FakeDocument([publishForm]);
+  let publishRequest = null;
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      SourceCompanionGitHubClientInstance: {
+        getAuthStatus: async () => ({
+          authenticated: true,
+          user: "octo"
+        })
+      },
+      SourceCompanionRepositoryPublishActions: {
+        runPublishAction: (request) => {
+          publishRequest = request;
+          return {
+            ok: false,
+            action: "publish",
+            command: null,
+            stdout: "",
+            stderr: "",
+            exitCode: null,
+            message: "Stopped by test.",
+            error: {
+              kind: "test-stop",
+              message: "Stopped by test."
+            }
+          };
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  publishForm.listeners.submit({
+    preventDefault() {},
+    submitter: { value: "default" }
+  });
+
+  assert.equal(publishRequest.repositoryPath, "C:\\code\\project");
+  assert.equal(publishRequest.name, "project");
+  assert.equal(publishRequest.description, "Focused source control");
+  assert.equal(publishRequest.visibility, "private");
+  assert.equal(publishRequest.initIfNeeded, true);
+});
+
 class FakeStorage {
   constructor() {
     this.values = new Map();

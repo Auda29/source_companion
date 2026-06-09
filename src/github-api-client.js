@@ -77,6 +77,11 @@ class GitHubBridgeClient {
     return normalizeRepositoryResult(result);
   }
 
+  async createRepository(options = {}) {
+    const result = await this.callBridge("createRepository", options);
+    return normalizeSingleRepositoryResult(result);
+  }
+
   async callBridge(method, payload) {
     if (!this.bridge || typeof this.bridge[method] !== "function") {
       throw createGitHubError({
@@ -283,7 +288,44 @@ class GitHubApiClient {
     };
   }
 
-  async requestJson(path, { token } = {}) {
+  async createRepository({ name, description = "", private: isPrivate = true } = {}) {
+    const normalizedName = clean(name);
+    if (!/^[A-Za-z0-9._-]+$/.test(normalizedName)) {
+      return {
+        ok: false,
+        repository: null,
+        error: createGitHubError({
+          kind: "invalid-request",
+          message: "Enter a valid GitHub repository name."
+        })
+      };
+    }
+
+    const result = await this.requestJson("/user/repos", {
+      method: "POST",
+      body: {
+        name: normalizedName,
+        description: clean(description),
+        private: Boolean(isPrivate),
+        auto_init: false
+      }
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        repository: null,
+        error: result.error
+      };
+    }
+
+    return {
+      ok: true,
+      repository: normalizeRepository(result.data),
+      error: null
+    };
+  }
+
+  async requestJson(path, { token, method = "GET", body } = {}) {
     if (typeof this.fetch !== "function") {
       return {
         ok: false,
@@ -308,12 +350,17 @@ class GitHubApiClient {
     const requestToken = token || stored.record.token;
     let response;
     try {
+      const headers = {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${requestToken}`,
+        "X-GitHub-Api-Version": "2022-11-28"
+      };
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+
       response = await this.fetch(`${this.apiBaseUrl}${path}`, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${requestToken}`,
-          "X-GitHub-Api-Version": "2022-11-28"
-        }
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body)
       });
     } catch (error) {
       return {
@@ -394,6 +441,19 @@ function normalizeRepositoryResult(result) {
   };
 }
 
+function normalizeSingleRepositoryResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  return {
+    ok,
+    repository: ok && source.repository ? normalizeRepository(source.repository) : null,
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub repository could not be created."
+    }))
+  };
+}
+
 function normalizeRepository(repo) {
   const owner = repo && repo.owner && typeof repo.owner === "object" ? clean(repo.owner.login) : clean(repo && repo.owner);
   const name = clean(repo && repo.name);
@@ -467,6 +527,16 @@ function normalizeGitHubResponseError(response, data) {
       scopesGranted: grantedScopes,
       rateLimit,
       retryAfterSeconds,
+      raw: data
+    });
+  }
+
+  if (status === 422 && /name|already exists|creation failed/i.test(message)) {
+    return createGitHubError({
+      kind: "github-repository-name-taken",
+      message: "A GitHub repository with this name already exists or cannot be created for this account.",
+      status,
+      scopesGranted: grantedScopes,
       raw: data
     });
   }

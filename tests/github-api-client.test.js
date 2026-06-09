@@ -77,6 +77,45 @@ test("renderer bridge client returns token-free auth and repository results", as
   assert.equal(result.repositories[0].stars, 4);
 });
 
+test("renderer bridge client creates repositories without exposing tokens", async () => {
+  const calls = [];
+  const client = createGitHubBridgeClient({
+    createRepository: async (options) => {
+      calls.push(options);
+      return {
+        ok: true,
+        repository: {
+          id: 3,
+          owner: "octo",
+          name: "published",
+          fullName: "octo/published",
+          private: true,
+          cloneUrl: "https://github.com/octo/published.git",
+          token: "must-not-leak"
+        },
+        token: "must-not-leak"
+      };
+    }
+  });
+
+  const result = await client.createRepository({
+    name: "published",
+    description: "Created from Source Companion",
+    private: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [{
+    name: "published",
+    description: "Created from Source Companion",
+    private: true
+  }]);
+  assert.equal(result.token, undefined);
+  assert.equal(result.repository.token, undefined);
+  assert.equal(result.repository.fullName, "octo/published");
+  assert.equal(result.repository.cloneUrl, "https://github.com/octo/published.git");
+});
+
 test("stores device login token in secure store and returns token-free status", async () => {
   const tokenStore = new MemorySecureTokenStore();
   const client = createGitHubApiClient({
@@ -189,6 +228,72 @@ test("loads and searches normalized user repositories", async () => {
   });
   assert.match(requests[0].url, /\/user\/repos\?/);
   assert.equal(requests[0].options.headers.Authorization, "Bearer secret-token");
+});
+
+test("creates a GitHub repository with normalized API request", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  const requests = [];
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return createResponse(201, {
+        id: 3,
+        name: "published",
+        full_name: "octo/published",
+        description: "Created from Source Companion",
+        private: false,
+        visibility: "public",
+        clone_url: "https://github.com/octo/published.git",
+        owner: { login: "octo" }
+      });
+    }
+  });
+
+  const result = await client.createRepository({
+    name: "published",
+    description: "Created from Source Companion",
+    private: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(requests[0].url, "https://api.github.com/user/repos");
+  assert.equal(requests[0].options.method, "POST");
+  assert.equal(requests[0].options.headers.Authorization, "Bearer secret-token");
+  assert.equal(requests[0].options.headers["Content-Type"], "application/json");
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    name: "published",
+    description: "Created from Source Companion",
+    private: false,
+    auto_init: false
+  });
+  assert.equal(result.repository.fullName, "octo/published");
+  assert.equal(result.repository.visibility, "public");
+});
+
+test("reports GitHub repository name conflicts", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"]
+  });
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async () => createResponse(422, { message: "Repository creation failed." })
+  });
+
+  const result = await client.createRepository({ name: "published" });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.kind, "github-repository-name-taken");
+  assert.match(result.error.message, /already exists|cannot be created/);
 });
 
 test("normalizes missing auth, invalid token, and rate-limit API failures", async () => {

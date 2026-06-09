@@ -16,6 +16,7 @@
     repositorySyncActionRunner: resolveRepositorySyncActionRunner(),
     repositoryStashActionRunner: resolveRepositoryStashActionRunner(),
     repositoryCloneActionRunner: resolveRepositoryCloneActionRunner(),
+    repositoryPublishActionRunner: resolveRepositoryPublishActionRunner(),
     githubClient: resolveGitHubClient(),
     githubAuth: noGitHubAuthStatus(),
     githubRepositories: {
@@ -149,14 +150,26 @@
     if (flow === "publish") {
       const path = clean(formData.get("path"));
       const name = clean(formData.get("name")) || displayNameFromPath(path);
+      const description = clean(formData.get("description"));
       const visibility = clean(formData.get("visibility"));
+      const initIfNeeded = Boolean(formData.get("initIfNeeded"));
       if (!isAbsolutePath(path) || !name) {
         setMessage("error", "Enter an absolute local folder and a repository name.");
         render();
         return false;
       }
 
-      openPreparedRepository(path, name, `Publish setup: ${visibility}`, { initialOperationKind: "init" });
+      if (visibility === "public" && !confirmPublicPublish(name)) {
+        return false;
+      }
+
+      openPublishRepository({
+        path,
+        name,
+        description,
+        visibility,
+        initIfNeeded
+      });
       return true;
     }
 
@@ -247,6 +260,62 @@
     setMessage("success", `Cloning ${displayName}.`);
     render();
     runRepositoryCloneAction(tab.id);
+  }
+
+  function openPublishRepository({ path, name, description, visibility, initIfNeeded }) {
+    const existing = state.tabs.find((tab) => samePath(tab.path, path));
+    if (existing) {
+      state.activeTabId = existing.id;
+      existing.publishRequest = {
+        name,
+        description,
+        visibility,
+        initIfNeeded
+      };
+      existing.publishAction = {
+        status: "running",
+        action: "publish",
+        message: "Publishing repository to GitHub.",
+        completedAt: null
+      };
+      existing.health = "operation-running";
+      setMessage("success", `Publishing ${name}.`);
+      render();
+      runRepositoryPublishAction(existing.id);
+      return;
+    }
+
+    const tab = createRepositoryContext({
+      displayName: displayNameFromPath(path) || name,
+      path,
+      entryStatus: `Publish running: ${visibility || "private"}`,
+      initialOperationKind: "publish"
+    });
+    tab.publishRequest = {
+      name,
+      description,
+      visibility,
+      initIfNeeded
+    };
+    tab.publishAction = {
+      status: "running",
+      action: "publish",
+      message: "Publishing repository to GitHub.",
+      completedAt: null
+    };
+    tab.health = "operation-running";
+    tab.operations.running = tab.operations.queued.map((operation) => ({
+      ...operation,
+      status: "running",
+      startedAt: new Date().toISOString()
+    }));
+    tab.operations.queued = [];
+
+    state.tabs.push(tab);
+    state.activeTabId = tab.id;
+    setMessage("success", `Publishing ${name}.`);
+    render();
+    runRepositoryPublishAction(tab.id);
   }
 
   function openPreparedRepository(path, name, status, options = {}) {
@@ -586,6 +655,8 @@
       stashAction: null,
       cloneAction: null,
       cloneRequest: null,
+      publishAction: null,
+      publishRequest: null,
       gitOutput: [],
       watchHandle: null
     };
@@ -1521,6 +1592,65 @@
     }
   }
 
+  async function runRepositoryPublishAction(tabId) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab || !tab.publishRequest) return;
+
+    const runPublishAction = state.repositoryPublishActionRunner;
+    if (!runPublishAction) {
+      applyPublishActionResult(tabId, {
+        ok: false,
+        action: "publish",
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: "Repository publish actions are not available in this runtime.",
+        error: {
+          kind: "repository-publish-actions-unavailable",
+          message: "Repository publish actions are not available in this runtime."
+        }
+      });
+      return;
+    }
+
+    try {
+      const result = await runPublishAction({
+        repositoryPath: tab.path,
+        name: tab.publishRequest.name,
+        description: tab.publishRequest.description,
+        visibility: tab.publishRequest.visibility,
+        initIfNeeded: tab.publishRequest.initIfNeeded,
+        githubClient: state.githubClient
+      });
+      applyPublishActionResult(tabId, result);
+      if (result.ok) {
+        const updated = state.tabs.find((item) => item.id === tabId);
+        if (updated) {
+          updated.entryStatus = "Publish completed";
+          updated.publishRequest = null;
+          addRecent(updated);
+          startRepositoryWatch(updated);
+          refreshRepositoryState(tabId, "publish");
+        }
+      }
+    } catch (error) {
+      applyPublishActionResult(tabId, {
+        ok: false,
+        action: "publish",
+        command: null,
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        message: error && error.message ? error.message : "Publish failed.",
+        error: {
+          kind: "publish-action-error",
+          message: error && error.message ? error.message : "Publish failed."
+        }
+      });
+    }
+  }
+
   function applyCommitActionResult(tabId, result) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -1639,6 +1769,51 @@
     render();
   }
 
+  function applyPublishActionResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const completedAt = new Date().toISOString();
+    tab.publishAction = {
+      status: result.ok ? "succeeded" : "failed",
+      action: "publish",
+      visibility: result.visibility || tab.publishRequest && tab.publishRequest.visibility || null,
+      repository: result.repository || null,
+      message: result.message,
+      error: result.error || null,
+      completedAt
+    };
+    tab.operations.running = [];
+    tab.operations.queued = [];
+    tab.operations.lastCompleted = {
+      id: `${tab.id}:publish:completed`,
+      repositoryId: tab.id,
+      kind: "publish",
+      action: "publish",
+      status: result.ok ? "succeeded" : "failed",
+      queuedAt: tab.openedAt,
+      startedAt: null,
+      completedAt,
+      error: result.error || null
+    };
+    tab.operations.completed = [tab.operations.lastCompleted, ...tab.operations.completed].slice(0, 8);
+    if (!result.ok) {
+      tab.health = "error";
+      tab.error = result.error || {
+        kind: "publish-error",
+        message: result.message || "Publish failed."
+      };
+      tab.lastRefresh = {
+        ...tab.lastRefresh,
+        status: "failed",
+        completedAt
+      };
+    }
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", result.message || (result.ok ? "Publish completed." : "Publish failed."));
+    render();
+  }
+
   function applyFileActionResult(tabId, result) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -1686,6 +1861,10 @@
 
   function confirmAmend() {
     return window.confirm("Amend rewrites the most recent commit on this branch.\n\nContinue only if you intend to change history.");
+  }
+
+  function confirmPublicPublish(name) {
+    return window.confirm(`Publish ${name} as a public GitHub repository?\n\nPublic repositories are visible to everyone.`);
   }
 
   function confirmBranchDelete(name) {
@@ -1959,6 +2138,30 @@
     return null;
   }
 
+  function resolveRepositoryPublishActionRunner() {
+    if (window.SourceCompanionRepositoryPublishActions && typeof window.SourceCompanionRepositoryPublishActions.runPublishAction === "function") {
+      return window.SourceCompanionRepositoryPublishActions.runPublishAction;
+    }
+
+    if (typeof require !== "function") {
+      return null;
+    }
+
+    const candidates = ["./repository-publish-actions", "./src/repository-publish-actions"];
+    for (const candidate of candidates) {
+      try {
+        const loaded = require(candidate);
+        if (loaded && typeof loaded.runPublishAction === "function") {
+          return loaded.runPublishAction;
+        }
+      } catch {
+        // Try the next runtime-specific path.
+      }
+    }
+
+    return null;
+  }
+
   function resolveGitHubClient() {
     if (window.SourceCompanionGitHubClientInstance &&
       typeof window.SourceCompanionGitHubClientInstance.getAuthStatus === "function") {
@@ -2003,7 +2206,8 @@
       login: () => tauriInvoke("github_login"),
       logout: (options) => tauriInvoke("github_logout", options || {}),
       listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", options || {}),
-      searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {})
+      searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {}),
+      createRepository: (options) => tauriInvoke("github_create_repository", options || {})
     };
   }
 
@@ -2135,6 +2339,7 @@
     return `
       <section class="source-control" aria-label="Source control changes">
         ${renderClonePanel(repo)}
+        ${renderPublishPanel(repo)}
         ${renderBranchPanel(repo)}
         ${renderSyncPanel(repo)}
         ${renderStashPanel(repo)}
@@ -2166,6 +2371,30 @@
           <div>
             <h3>Clone</h3>
             <p>${escapeHtml(request.url || "Repository cloned")} / ${escapeHtml(repo.path)}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        <div class="sync-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
+  function renderPublishPanel(repo) {
+    if (!repo.publishAction && !repo.publishRequest) return "";
+    const status = repo.publishAction || {
+      status: "idle",
+      message: "Publish is ready."
+    };
+    const request = repo.publishRequest || {};
+    const target = request.name ? `GitHub: ${request.name}` : "GitHub repository";
+    const visibility = request.visibility || repo.publishAction && repo.publishAction.visibility || "private";
+
+    return `
+      <section class="sync-panel" aria-label="Publish progress">
+        <div class="sync-panel-heading">
+          <div>
+            <h3>Publish</h3>
+            <p>${escapeHtml(target)} / ${escapeHtml(visibility)} / ${escapeHtml(repo.path)}</p>
           </div>
           <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
         </div>

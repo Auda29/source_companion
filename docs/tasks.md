@@ -25,6 +25,8 @@ Stand 2026-06-03: Review-Fehler in `T12` als konkrete Akzeptanz ergaenzt: Discar
 
 Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37` und `T38` ersetzt, damit Auth-/Token-Speicherentscheidung und API-Implementierung getrennt reviewbar sind. Die gemischte Clone-Aufgabe `T19` wurde durch `T39` und `T40` ersetzt, damit URL-Clone nicht unnoetig von GitHub Auth blockiert wird.
 
+Stand 2026-06-09: Die zu breite Publish-Aufgabe `T20` wurde durch `T41` bis `T43` ersetzt, damit GitHub-Repo-Erstellung, Publish-Vorbedingungen und Remote/Push-Ausfuehrung getrennt reviewbar sind. Die kombinierte Konzept-/Umsetzungsaufgabe `T35` wurde durch `T44` und `T45` ersetzt.
+
 ## Aufgaben
 
 ### T1 - Produktquelle und Scope-Gates festziehen
@@ -250,22 +252,43 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 ### T40 - Clone from GitHub bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T4`, `T38`, `T39`
 - Definition of Done: Clone from GitHub zeigt durchsuchbare Repositories des eingeloggten Users mit Owner/Name, Beschreibung, Sichtbarkeit, Stars, Clone-URL und private/public Indikator, soweit GitHub diese Daten liefert; die gewaehlte Clone-URL ist vor Ausfuehrung sichtbar; Zielordner ist frei waehlbar; Clone-Fortschritt und Fehler sind sichtbar; erfolgreich geklonte Repositories werden automatisch als Tab geoeffnet.
 - Implementierungsnotiz: Reuse des URL-Clone-Flows aus `T39`; GitHub-Auswahl liefert nur Repository-Metadaten und Clone-URL. Keine GitHub-Dashboard-, Issue- oder Notification-Funktionen aufnehmen.
 - Notiz: GitHub-Clone nutzt jetzt die ausgewaehlte Repository-Clone-URL und startet denselben Clone-Runner wie der URL-Clone-Flow mit frei waehlbarem finalem Zielordner; die Repository-Liste zeigt Beschreibung, Sichtbarkeit/private-public, Stars und Clone-URL, und ein Regressionstest prueft die Uebergabe der GitHub-Clone-URL an den Clone-Runner.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. Clone from GitHub zeigt durchsuchbare User-Repositories mit Owner/Name, Beschreibung, Sichtbarkeit/private-public, Stars und Clone-URL; die ausgewaehlte Clone-URL ist vor Ausfuehrung sichtbar, der frei waehlbare Zielordner wird an denselben Clone-Runner wie der URL-Clone-Flow uebergeben, und Clone-Fortschritt, Fehler sowie erfolgreiche Tab-Oeffnung sind verdrahtet. Fokussierter Clone-Flow-Test bestand.
 - Offene Review-Punkte: -
 
-### T20 - Publish to GitHub fuer lokale Ordner bauen
+### T41 - GitHub Repository-Erstellung fuer Publish implementieren
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T6`, `T8`, `T14`, `T38`
-- Definition of Done: Lokaler Ordner oder lokales Git-Repo kann nach GitHub gepublished werden; Repository-Name wird vorgeschlagen; Beschreibung ist optional; private/public Auswahl ist vorhanden; origin wird gesetzt und initial push ausgefuehrt; vorhandene Remotes werden nicht still ueberschrieben.
-- Implementierungsnotiz: Wenn noch kein Git-Repo existiert, `git init` explizit bestaetigen. Wenn keine Commits existieren, zum Commit-Flow fuehren.
+- Abhaengigkeiten: `T38`
+- Definition of Done: Der GitHub API Client kann fuer den eingeloggten User ein Repository mit Name, optionaler Beschreibung und private/public Sichtbarkeit erstellen; fehlende Auth, fehlende Scopes, Rate-Limits, Netzwerkfehler, belegte Repository-Namen und sonstige API-Fehler werden strukturiert und lesbar zurueckgegeben; Tokens bleiben backend-intern und werden nicht in Renderer-State, Remote-URLs oder Git-Argumente geschrieben.
+- Implementierungsnotiz: Nur die Publish-spezifische GitHub-Repo-Erstellung ergaenzen. Keine GitHub-Dashboard-, Org-Admin- oder Issue-Funktionen aufnehmen.
+- Notiz: `src/github-api-client.js` unterstuetzt jetzt tokenfreie Bridge- und direkte API-Repository-Erstellung fuer Publish mit Name, optionaler Beschreibung und private/public Sichtbarkeit; `github_create_repository` ist als Tauri-Bridge-Command vorbereitet. Tests sichern tokenfreie Bridge-Ergebnisse, POST `/user/repos`, belegte Namen/API-Fehler und die bestehende Auth-/Token-Grenze ab.
+- Review-Ergebnis: Nicht bestanden am 2026-06-09. Die Repository-Erstellung ist grundsaetzlich vorhanden, aber ein Scope-Fehlerfall verletzt die Definition of Done.
+- Offene Review-Punkte: `GitHubApiClient.createRepository()` muss vor dem POST denselben Auth-/Scope-Vertrag wie `listUserRepositories()` einhalten. Aktuell ruft die Methode bei einem gespeicherten Token mit nur `read:user` trotzdem `POST /user/repos` auf und kann `ok: true` liefern, statt strukturiert `github-scope-missing` zurueckzugeben; bitte mit Regressionstest fuer fehlende Scopes bei Repository-Erstellung absichern.
+
+### T42 - Publish-Vorbedingungen und UI-Flow bauen
+
+- Status: `todo`
+- Prioritaet: `P1`
+- Abhaengigkeiten: `T4`, `T8`, `T14`, `T38`, `T41`
+- Definition of Done: Publish to GitHub zeigt den ausgewaehlten lokalen Ordner oder Repository-Kontext, schlaegt einen Repository-Namen aus dem Ordnernamen vor, bietet optionale Beschreibung sowie private/public Auswahl an und prueft vor Ausfuehrung GitHub-Login, Ordner-ohne-Git, Git-Repo-ohne-Commits und vorhandene Remote-Situation; `git init` fuer Ordner ohne Git und Public Publish brauchen eine sichtbare Bestaetigung; bei fehlenden Commits wird zum Commit-Flow gefuehrt statt automatisch zu committen.
+- Implementierungsnotiz: Dieser Task startet noch keinen versteckten Publish-Durchlauf. Er bereitet die validierten Eingaben und bestaetigten Entscheidungen fuer den Runner aus `T43` vor.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T43 - Publish-Runner mit Remote-Schutz und Initial Push bauen
+
+- Status: `todo`
+- Prioritaet: `P1`
+- Abhaengigkeiten: `T6`, `T7`, `T16`, `T41`, `T42`
+- Definition of Done: Der Publish-Runner erstellt das GitHub-Repository, initialisiert bei bestaetigtem Ordner-ohne-Git das lokale Git-Repo, setzt `origin` nur nach klarer Remote-Pruefung, ueberschreibt vorhandene Remotes nie still, fuehrt den initialen Push bzw. Publish Branch aus und oeffnet oder aktualisiert danach den Repository-Tab; Fortschritt, Erfolg, GitHub-Fehler, Git-Fehler und rohe Ausgaben sind im UI sichtbar.
+- Implementierungsnotiz: Git-Kommandos laufen nur ueber den whitelisted Git Wrapper und die Operation Queue. HTTPS/Git Credential Manager priorisieren; kein Token in Remote-URLs oder Git-Argumente schreiben; SSH-Fehler auf das lokale Git/SSH-Setup zurueckfuehren.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -283,7 +306,7 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T6`, `T7`, `T12`, `T14`, `T15`, `T16`, `T20`
+- Abhaengigkeiten: `T6`, `T7`, `T12`, `T14`, `T15`, `T16`, `T43`
 - Definition of Done: Git Output ist jederzeit erreichbar; GitHub- und Git-Fehler sind lesbar; gefaehrliche Aktionen haben bestaetigte Warnungen fuer Discard, Amend, Branch loeschen, Remote ueberschreiben und Public Publish; rohe Ausgaben bleiben einsehbar, sind aber nicht die einzige Nutzererklaerung.
 - Implementierungsnotiz: Keine versteckten Automatismen wie Auto-Commit, Auto-Push oder Auto-Publish.
 - Review-Ergebnis: -
@@ -293,7 +316,7 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 - Status: `todo`
 - Prioritaet: `P1`
-- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T20`, `T23`, `T28`, `T29`, `T30`, `T38`, `T39`, `T40`
+- Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T28`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
 - Review-Ergebnis: -
@@ -390,12 +413,22 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
-### T35 - Floating Window Modus konzipieren und bauen
+### T44 - Floating Window Modus konzipieren
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T33`, `T34`, `T14`, `T16`, `T23`
-- Definition of Done: Desktop-App bietet ein kleines Floating Window fuer den aktiven Repository-Kontext; es zeigt Repository, Branch, Change-Zaehler, Status/Fehler und kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; es bleibt fokussiert auf Git und wird nicht zum Dashboard.
+- Abhaengigkeiten: `T33`, `T14`, `T16`, `T23`
+- Definition of Done: Ein kurzes Konzept dokumentiert Layout, sichtbare Felder, erlaubte Aktionen, Fehler-/Busy-Zustaende, Warnungsweiterleitung, Fokusverhalten und die gemeinsame State-/Queue-Nutzung fuer das Floating Window; enthalten sind Repository, Branch, Change-Zaehler, Status/Fehler sowie kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; ausgeschlossen bleiben Dashboard-, Terminal-, Projektbaum- und Task-Runner-Funktionen.
+- Implementierungsnotiz: Erst den kompakten Modus festlegen, dann bauen. Das Konzept muss benennen, welche Aktionen direkt im Floating Window laufen und welche in die Full UI fuehren.
+- Review-Ergebnis: -
+- Offene Review-Punkte: -
+
+### T45 - Floating Window Modus bauen
+
+- Status: `todo`
+- Prioritaet: `P2`
+- Abhaengigkeiten: `T34`, `T44`
+- Definition of Done: Die Desktop-App bietet gemaess `T44` ein kleines Floating Window fuer den aktiven Repository-Kontext; es zeigt Repository, Branch, Change-Zaehler, Status/Fehler und kompakte Aktionen fuer Commit, Commit and Push, Push und Pull/Sync; alle Aktionen nutzen denselben Repository-State und dieselbe Operation Queue wie die Full UI und fuehren nicht zu doppelten Git-Operationen oder versteckten Fehlern.
 - Implementierungsnotiz: Floating Window ist der kompakte Desktop-Modus. Es soll schnell erreichbar sein und wenig Flaeche einnehmen, aber keine wichtigen Git-Fehler verstecken.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
@@ -404,7 +437,7 @@ Stand 2026-06-03: Die zu breite GitHub-Grundlagenaufgabe `T18` wurde durch `T37`
 
 - Status: `todo`
 - Prioritaet: `P2`
-- Abhaengigkeiten: `T34`, `T35`
+- Abhaengigkeiten: `T34`, `T45`
 - Definition of Done: Nutzer kann aus dem Floating Window in die Full UI wechseln und zurueck; Repository-Kontext, laufende Operationen, Fehler, Tabs und lokale UI-Zustaende bleiben konsistent; Umschalten fuehrt nicht zu doppelten Git-Operationen oder verlorenen Statusupdates.
 - Implementierungsnotiz: Full UI ist die Web-Version in Desktop-Shell. Floating Window und Full UI muessen denselben Repository-State nutzen, nicht zwei voneinander abweichende Modelle.
 - Review-Ergebnis: -

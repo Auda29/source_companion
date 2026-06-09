@@ -128,14 +128,22 @@
           Repository name
           <input name="name" autocomplete="off" placeholder="project">
         </label>
+        <label>
+          Description
+          <input name="description" autocomplete="off" placeholder="optional repository description">
+        </label>
         <fieldset class="visibility-options">
           <legend>Visibility</legend>
           <label><input type="radio" name="visibility" value="private" checked> Private</label>
           <label><input type="radio" name="visibility" value="public"> Public</label>
         </fieldset>
+        <label class="checkbox-label">
+          <input name="initIfNeeded" type="checkbox">
+          Initialize folder with Git if needed
+        </label>
         <menu>
           <button class="button" value="cancel">Cancel</button>
-          <button class="button primary" value="default">Prepare Publish</button>
+          <button class="button primary" value="default">Publish Repository</button>
         </menu>
       </form>
     </dialog>
