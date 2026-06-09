@@ -425,13 +425,15 @@ textarea {
 .branch-panel,
 .sync-panel,
 .stash-panel,
+.pull-request-panel,
 .commit-box {
   min-width: 0;
 }
 
 .branch-panel,
 .sync-panel,
-.stash-panel {
+.stash-panel,
+.pull-request-panel {
   display: grid;
   gap: 12px;
   border: 1px solid var(--border);
@@ -589,7 +591,8 @@ textarea {
 
 .branch-panel-heading,
 .sync-panel-heading,
-.stash-panel-heading {
+.stash-panel-heading,
+.pull-request-heading {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -598,7 +601,8 @@ textarea {
 
 .branch-panel-heading h3,
 .sync-panel-heading h3,
-.stash-panel-heading h3 {
+.stash-panel-heading h3,
+.pull-request-heading h3 {
   margin: 0;
   font-size: 14px;
   text-transform: uppercase;
@@ -606,7 +610,8 @@ textarea {
 
 .branch-panel-heading p,
 .sync-panel-heading p,
-.stash-panel-heading p {
+.stash-panel-heading p,
+.pull-request-heading p {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 12px;
@@ -745,6 +750,106 @@ textarea {
   gap: 6px;
 }
 
+.pull-request-remote,
+.pull-request-card {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pull-request-remote span,
+.pull-request-card strong,
+.pull-request-card span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pull-request-remote a,
+.pull-request-card a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.pull-request-card {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.pull-request-card div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pull-request-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pull-request-form label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pull-request-form label:nth-child(3),
+.pull-request-form label:nth-child(4),
+.pull-request-actions {
+  grid-column: 1 / -1;
+}
+
+.pull-request-form input,
+.pull-request-form textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.pull-request-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.pull-request-form input:focus,
+.pull-request-form textarea:focus {
+  outline: 2px solid rgb(36 107 107 / 0.2);
+  border-color: var(--accent);
+}
+
+.pull-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pull-request-empty {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .branch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -793,7 +898,8 @@ textarea {
 
 .branch-status,
 .sync-status,
-.stash-status {
+.stash-status,
+.pull-request-status {
   border-radius: 6px;
   padding: 8px 10px;
   background: var(--surface-alt);
@@ -803,21 +909,24 @@ textarea {
 
 .branch-status.success,
 .sync-status.success,
-.stash-status.success {
+.stash-status.success,
+.pull-request-status.success {
   background: var(--success-bg);
   color: var(--success);
 }
 
 .branch-status.error,
 .sync-status.error,
-.stash-status.error {
+.stash-status.error,
+.pull-request-status.error {
   background: var(--danger-bg);
   color: var(--danger);
 }
 
 .branch-status.running,
 .sync-status.running,
-.stash-status.running {
+.stash-status.running,
+.pull-request-status.running {
   background: var(--warning-bg);
   color: var(--warning);
 }
@@ -1487,6 +1596,7 @@ textarea {
   .branch-grid,
   .history-grid,
   .history-meta,
+  .pull-request-form,
   .branch-form,
   .branch-form:first-child,
   .branch-form:nth-child(3) {

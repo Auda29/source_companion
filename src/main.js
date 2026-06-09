@@ -612,6 +612,19 @@
         runRepositoryStashAction(active.id, button.dataset.stashAction, formData);
       });
     });
+
+    workspaceContent.querySelectorAll("[data-pr-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        runPullRequestAction(active.id, "create", new FormData(form));
+      });
+    });
+
+    workspaceContent.querySelectorAll("[data-pr-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runPullRequestAction(active.id, button.dataset.prAction, null);
+      });
+    });
   }
 
   function createRepositoryContext({ displayName, path, entryStatus, initialOperationKind }) {
@@ -671,6 +684,7 @@
       cloneRequest: null,
       publishAction: null,
       publishRequest: null,
+      pullRequest: emptyPullRequestState(),
       gitOutput: [],
       watchHandle: null
     };
@@ -771,6 +785,7 @@
       tab.diffPreview = null;
     }
     tab.github = loaded.github || null;
+    syncPullRequestState(tab);
     tab.operations = normalizeOperations(loaded.operations || tab.operations);
     tab.error = loaded.error || null;
     tab.lastRefresh = {
@@ -780,6 +795,7 @@
     };
 
     render();
+    maybeAutoLoadPullRequests(tab.id);
   }
 
   async function refreshGitHubAuthStatus(reason) {
@@ -988,6 +1004,156 @@
         refreshRepositoryState(tab.id, "github-auth");
       }
     });
+  }
+
+  function syncPullRequestState(tab) {
+    const current = tab.pullRequest || emptyPullRequestState();
+    const contextKey = pullRequestContextKey(tab);
+    const sameContext = current.contextKey === contextKey;
+    const branch = currentBranchName(tab.git);
+    const repository = tab.github && tab.github.status === "ready" ? {
+      owner: tab.github.owner,
+      name: tab.github.name || tab.github.repository,
+      fullName: tab.github.fullName,
+      remoteName: tab.github.remoteName || tab.github.remote,
+      htmlUrl: tab.github.htmlUrl
+    } : null;
+
+    tab.pullRequest = {
+      ...emptyPullRequestState(),
+      ...(sameContext ? current : {}),
+      contextKey,
+      branch,
+      repository,
+      base: sameContext ? clean(current.base) || defaultPullRequestBase(tab.git) : defaultPullRequestBase(tab.git),
+      title: sameContext ? clean(current.title) : defaultPullRequestTitle(branch),
+      description: sameContext ? clean(current.description) : ""
+    };
+  }
+
+  function maybeAutoLoadPullRequests(tabId) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab || !tab.pullRequest) return;
+    const validation = validatePullRequestAction(tab, "load");
+    if (!validation.ok) return;
+    if (tab.pullRequest.status === "running") return;
+    if (tab.pullRequest.loadedKey === tab.pullRequest.contextKey) return;
+
+    runPullRequestAction(tabId, "load", null);
+  }
+
+  async function runPullRequestAction(tabId, action, values) {
+    if (action === "load") {
+      await loadPullRequests(tabId);
+      return;
+    }
+
+    if (action === "create") {
+      await createPullRequest(tabId, values);
+    }
+  }
+
+  async function loadPullRequests(tabId) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const validation = validatePullRequestAction(tab, "load");
+    if (!validation.ok) {
+      applyPullRequestResult(tabId, pullRequestFailureResult("github-pr-list", validation.message, {
+        kind: "pull-request-unavailable",
+        message: validation.message
+      }));
+      return;
+    }
+
+    tab.pullRequest = {
+      ...(tab.pullRequest || emptyPullRequestState()),
+      status: "running",
+      message: "Loading pull requests for this branch.",
+      error: null
+    };
+    render();
+
+    const github = tab.github;
+    const branch = currentBranchName(tab.git);
+    try {
+      const result = await state.githubClient.listPullRequests({
+        owner: github.owner,
+        repo: github.name || github.repository,
+        branch,
+        headOwner: github.owner
+      });
+      applyPullRequestResult(tabId, {
+        ...result,
+        action: "github-pr-list",
+        branch,
+        repository: github.fullName,
+        command: { display: "GitHub PR lookup" },
+        message: pullRequestListMessage(result)
+      });
+    } catch (error) {
+      applyPullRequestResult(tabId, pullRequestFailureResult("github-pr-list", error && error.message ? error.message : "Pull requests could not be loaded.", {
+        kind: "github-pr-list-error",
+        message: error && error.message ? error.message : "Pull requests could not be loaded."
+      }));
+    }
+  }
+
+  async function createPullRequest(tabId, values) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const base = clean(values && values.get ? values.get("base") : tab.pullRequest && tab.pullRequest.base);
+    const title = clean(values && values.get ? values.get("title") : tab.pullRequest && tab.pullRequest.title);
+    const description = clean(values && values.get ? values.get("description") : tab.pullRequest && tab.pullRequest.description);
+    const draft = Boolean(values && values.get && values.get("draft"));
+    const validation = validatePullRequestAction(tab, "create", { base, title });
+    if (!validation.ok) {
+      applyPullRequestResult(tabId, pullRequestFailureResult("github-pr-create", validation.message, {
+        kind: "pull-request-unavailable",
+        message: validation.message
+      }));
+      return;
+    }
+
+    tab.pullRequest = {
+      ...(tab.pullRequest || emptyPullRequestState()),
+      status: "running",
+      base,
+      title,
+      description,
+      message: "Creating pull request.",
+      error: null
+    };
+    render();
+
+    const github = tab.github;
+    const head = currentBranchName(tab.git);
+    try {
+      const result = await state.githubClient.createPullRequest({
+        owner: github.owner,
+        repo: github.name || github.repository,
+        base,
+        head,
+        title,
+        description,
+        draft
+      });
+      applyPullRequestResult(tabId, {
+        ...result,
+        action: "github-pr-create",
+        base,
+        head,
+        repository: github.fullName,
+        command: { display: "GitHub PR create" },
+        message: pullRequestCreateMessage(result)
+      });
+    } catch (error) {
+      applyPullRequestResult(tabId, pullRequestFailureResult("github-pr-create", error && error.message ? error.message : "Pull request could not be created.", {
+        kind: "github-pr-create-error",
+        message: error && error.message ? error.message : "Pull request could not be created."
+      }));
+    }
   }
 
   function selectChange(tabId, changeKeyValue) {
@@ -1909,6 +2075,32 @@
     render();
   }
 
+  function applyPullRequestResult(tabId, result) {
+    const tab = state.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+
+    const existingState = tab.pullRequest || emptyPullRequestState();
+    const pullRequests = Array.isArray(result.pullRequests) ? result.pullRequests :
+      (result.pullRequest ? [result.pullRequest, ...existingState.pullRequests.filter((item) => item.number !== result.pullRequest.number)] : existingState.pullRequests);
+    const existing = result.pullRequest || pullRequests[0] || null;
+    const completedAt = new Date().toISOString();
+
+    tab.pullRequest = {
+      ...existingState,
+      status: result.ok ? "succeeded" : "failed",
+      message: result.message || (result.ok ? "Pull request action completed." : "Pull request action failed."),
+      pullRequests,
+      existing,
+      loadedKey: result.ok ? existingState.contextKey : existingState.loadedKey,
+      created: result.pullRequest || existingState.created,
+      error: result.error || null,
+      completedAt
+    };
+    tab.gitOutput = [createGitOutputEntry(result), ...tab.gitOutput].slice(0, 8);
+    setMessage(result.ok ? "success" : "error", tab.pullRequest.message);
+    render();
+  }
+
   function applyFileActionResult(tabId, result) {
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab) return;
@@ -1949,6 +2141,8 @@
   function gitOutputCommandLabel(result, command, args) {
     if (command.display) return command.display;
     if (result.action === "publish-preflight") return "Publish preflight";
+    if (result.action === "github-pr-list") return "GitHub PR lookup";
+    if (result.action === "github-pr-create") return "GitHub PR create";
     if (args.length > 0) return `git ${args.join(" ")}`;
     return "git";
   }
@@ -1962,6 +2156,13 @@
       result.checks.forEach((check) => {
         details.push(`${check.ok ? "OK" : "Blocked"}: ${check.label || "Check"} - ${check.message || ""}`);
       });
+    }
+    if (result.repository) details.push(`Repository: ${result.repository}`);
+    if (result.branch) details.push(`Branch: ${result.branch}`);
+    if (result.base || result.head) details.push(`PR target: ${result.head || "head"} -> ${result.base || "base"}`);
+    if (result.pullRequest && result.pullRequest.htmlUrl) details.push(`Pull request: ${result.pullRequest.htmlUrl}`);
+    if (Array.isArray(result.pullRequests) && result.pullRequests[0] && result.pullRequests[0].htmlUrl) {
+      details.push(`Pull request: ${result.pullRequests[0].htmlUrl}`);
     }
     return details;
   }
@@ -2486,6 +2687,7 @@
         ${renderClonePanel(repo)}
         ${renderPublishPanel(repo)}
         ${renderBranchPanel(repo)}
+        ${renderPullRequestPanel(repo)}
         ${renderSyncPanel(repo)}
         ${renderStashPanel(repo)}
         ${renderHistoryPanel(repo)}
@@ -2719,6 +2921,86 @@
         </div>
         <div class="branch-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
       </section>
+    `;
+  }
+
+  function renderPullRequestPanel(repo) {
+    const prState = repo.pullRequest || emptyPullRequestState();
+    const existing = prState.existing || null;
+    const running = prState.status === "running";
+    const loadValidation = validatePullRequestAction(repo, "load");
+    const createValidation = validatePullRequestAction(repo, "create", {
+      base: prState.base,
+      title: prState.title
+    });
+    const status = running || prState.status === "succeeded" || prState.status === "failed" ? prState : {
+      status: loadValidation.ok ? "idle" : "blocked",
+      message: loadValidation.message
+    };
+    const github = repo.github || null;
+    const remoteLabelText = pullRequestRemoteLabel(github);
+    const branch = currentBranchName(repo.git);
+    const disabled = running || !loadValidation.ok;
+
+    return `
+      <section class="pull-request-panel" aria-label="GitHub pull requests">
+        <div class="pull-request-heading">
+          <div>
+            <h3>GitHub Pull Request</h3>
+            <p>${escapeHtml(remoteLabelText)} / head: ${escapeHtml(branch || "no branch")} / base: ${escapeHtml(prState.base || "main")}</p>
+          </div>
+          <span class="status-pill ${branchStatusClass(status)}">${escapeHtml(branchStatusLabel(status))}</span>
+        </div>
+        ${github && github.htmlUrl ? `
+          <div class="pull-request-remote">
+            <span>${escapeHtml(github.remoteName || github.remote || "remote")}: ${escapeHtml(github.fullName || "")}</span>
+            <a href="${escapeHtml(github.htmlUrl)}" target="_blank" rel="noreferrer">Open repository</a>
+          </div>
+        ` : ""}
+        ${renderExistingPullRequest(existing)}
+        <form class="pull-request-form" data-pr-form>
+          <label>
+            Base branch
+            <input name="base" autocomplete="off" value="${escapeHtml(prState.base || "main")}" ${disabled || existing ? "disabled" : ""}>
+          </label>
+          <label>
+            Head branch
+            <input name="head" value="${escapeHtml(branch || "")}" disabled>
+          </label>
+          <label>
+            Title
+            <input name="title" autocomplete="off" value="${escapeHtml(prState.title || "")}" ${disabled || existing ? "disabled" : ""}>
+          </label>
+          <label>
+            Description
+            <textarea name="description" rows="3" autocomplete="off" ${disabled || existing ? "disabled" : ""}>${escapeHtml(prState.description || "")}</textarea>
+          </label>
+          <div class="pull-request-actions">
+            <button class="button" type="button" data-pr-action="load" ${loadValidation.ok && !running ? "" : "disabled"} title="${escapeHtml(loadValidation.message)}">Refresh PR</button>
+            <button class="button primary" type="submit" ${createValidation.ok && !running ? "" : "disabled"} title="${escapeHtml(createValidation.message)}">Create PR</button>
+          </div>
+        </form>
+        <div class="pull-request-status ${commitStatusClass(status)}">${escapeHtml(status.message || "")}</div>
+      </section>
+    `;
+  }
+
+  function renderExistingPullRequest(pr) {
+    if (!pr) {
+      return '<div class="pull-request-empty">No open pull request loaded for this branch.</div>';
+    }
+
+    const number = pr.number ? `#${pr.number}` : "PR";
+    const base = pr.base && pr.base.ref ? pr.base.ref : "";
+    const head = pr.head && pr.head.ref ? pr.head.ref : "";
+    return `
+      <article class="pull-request-card">
+        <div>
+          <strong>${escapeHtml(`${number} ${pr.title || "Pull request"}`)}</strong>
+          <span>${escapeHtml(`${pr.state || "unknown"} / ${head || "head"} -> ${base || "base"}`)}</span>
+        </div>
+        ${pr.htmlUrl ? `<a class="button" href="${escapeHtml(pr.htmlUrl)}" target="_blank" rel="noreferrer">Open PR</a>` : ""}
+      </article>
     `;
   }
 
@@ -3301,6 +3583,53 @@
     return { ok: false, message: "Unknown stash action." };
   }
 
+  function validatePullRequestAction(repo, action, values = {}) {
+    if (!repo || repo.kind === "no-folder" || repo.kind === "folder-without-git") {
+      return { ok: false, message: "Open a Git repository before using pull requests." };
+    }
+    if (!state.githubClient) {
+      return { ok: false, message: "GitHub actions are not available in this runtime." };
+    }
+    if (!repo.github) {
+      return { ok: false, message: "Configure a GitHub remote before using pull requests." };
+    }
+    if (repo.github.status !== "ready") {
+      return { ok: false, message: repo.github.message || "Resolve the GitHub remote mapping before using pull requests." };
+    }
+    if (!repo.github.authenticated) {
+      return { ok: false, message: "Log in to GitHub before using pull requests." };
+    }
+    if (!currentBranchName(repo.git)) {
+      return { ok: false, message: "Check out a local branch before using pull requests." };
+    }
+    if (repo.pullRequest && repo.pullRequest.status === "running") {
+      return { ok: false, message: "Pull request action is running." };
+    }
+    if (action === "load") {
+      if (typeof state.githubClient.listPullRequests !== "function") {
+        return { ok: false, message: "GitHub pull request lookup is not available in this runtime." };
+      }
+      return { ok: true, message: "Ready to refresh pull request status." };
+    }
+    if (action === "create") {
+      if (typeof state.githubClient.createPullRequest !== "function") {
+        return { ok: false, message: "GitHub pull request creation is not available in this runtime." };
+      }
+      if (repo.pullRequest && repo.pullRequest.existing) {
+        return { ok: false, message: "An open pull request already exists for this branch." };
+      }
+      if (!clean(values.base)) {
+        return { ok: false, message: "Enter the base branch before creating a pull request." };
+      }
+      if (!clean(values.title)) {
+        return { ok: false, message: "Enter a pull request title before creating it." };
+      }
+      return { ok: true, message: `Ready to create ${currentBranchName(repo.git)} into ${clean(values.base)}.` };
+    }
+
+    return { ok: false, message: "Unknown pull request action." };
+  }
+
   function branchActionTarget(action, values) {
     if (action === "checkout-remote") return clean(values.localName) || clean(values.remoteBranch) || null;
     return clean(values.name) || null;
@@ -3369,6 +3698,82 @@
       tokenSource: null,
       lastValidatedAt: null,
       status: "idle",
+      error
+    };
+  }
+
+  function emptyPullRequestState() {
+    return {
+      status: "idle",
+      message: "Pull request actions are ready.",
+      contextKey: "",
+      loadedKey: "",
+      branch: "",
+      repository: null,
+      base: "main",
+      title: "",
+      description: "",
+      pullRequests: [],
+      existing: null,
+      created: null,
+      error: null,
+      completedAt: null
+    };
+  }
+
+  function pullRequestContextKey(repo) {
+    const github = repo && repo.github && repo.github.status === "ready" ? repo.github : null;
+    const branch = currentBranchName(repo && repo.git);
+    if (!github || !branch) return "";
+    return `${github.owner || ""}/${github.name || github.repository || ""}:${branch}`;
+  }
+
+  function defaultPullRequestBase(git) {
+    const upstream = upstreamParts(git);
+    if (upstream && upstream.branch) return upstream.branch;
+    return "main";
+  }
+
+  function defaultPullRequestTitle(branch) {
+    return clean(branch).replace(/[-_/]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function pullRequestRemoteLabel(github) {
+    if (!github) return "No GitHub remote";
+    if (github.status === "ambiguous-github-remotes") return "Ambiguous GitHub remotes";
+    if (github.status === "not-github-remote") return "No GitHub remote";
+    const repo = github.fullName || (github.owner && github.name ? `${github.owner}/${github.name}` : "GitHub remote");
+    const remote = github.remoteName || github.remote || "remote";
+    return `${repo} via ${remote}`;
+  }
+
+  function pullRequestListMessage(result) {
+    if (!result || !result.ok) {
+      return result && result.error && result.error.message ? result.error.message : "Pull requests could not be loaded.";
+    }
+    const count = Array.isArray(result.pullRequests) ? result.pullRequests.length : 0;
+    if (count === 0) return "No open pull request found for this branch.";
+    const first = result.pullRequests[0];
+    return `Open pull request ${first.number ? `#${first.number}` : ""} loaded.`;
+  }
+
+  function pullRequestCreateMessage(result) {
+    if (!result || !result.ok) {
+      return result && result.error && result.error.message ? result.error.message : "Pull request could not be created.";
+    }
+    const pr = result.pullRequest || {};
+    return `Created pull request ${pr.number ? `#${pr.number}` : ""}.`;
+  }
+
+  function pullRequestFailureResult(action, message, error) {
+    return {
+      ok: false,
+      action,
+      command: { display: action === "github-pr-create" ? "GitHub PR create" : "GitHub PR lookup" },
+      stdout: "",
+      stderr: "",
+      exitCode: null,
+      message,
       error
     };
   }

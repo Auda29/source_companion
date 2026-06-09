@@ -325,7 +325,7 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 - Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
-- Notiz: 2026-06-09 12:45 CEST erneut nicht umgesetzt, weil T24 weiterhin von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
+- Notiz: 2026-06-09 13:15 CEST erneut nicht umgesetzt, weil T24 weiterhin von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -362,12 +362,13 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T47 - GitHub PR-Erstellung im Repository-UI verdrahten
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T46`
 - Definition of Done: Aktiver Repository-Kontext zeigt die erkannte GitHub-Remote-Zuordnung; eine vorhandene PR fuer den aktuellen Branch wird angezeigt oder verlinkt; neue PR kann mit Base-Branch, Titel und Beschreibung aus dem UI erstellt werden; gewaehlte Base und Head sind vor Ausfuehrung sichtbar; erstellte oder vorhandene PR kann im Browser oder in der GitHub-UI geoeffnet werden; Lade-, Erfolgs- und Fehlerzustaende sind im Repository-Kontext und Git Output sichtbar.
 - Implementierungsnotiz: GitHub-Funktionen bleiben auf Versionskontrolle begrenzt. Kein Issue Board, kein Kanban, keine Notifications-Zentrale und kein allgemeines GitHub-Dashboard.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 13:07 CEST umgesetzt: Repository-UI zeigt eine GitHub-Pull-Request-Sektion mit erkannter Remote-Zuordnung, automatischem Laden vorhandener PRs fuer den aktuellen Branch, Links zu Repository/PR, Create-PR-Formular mit sichtbarem Base/Head sowie Lade-, Erfolgs- und Fehlerstatus im Repository-Kontext und Git Output. Fokussierte Main-UI-Tests und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. Repository-UI zeigt die erkannte GitHub-Remote-Zuordnung, laedt vorhandene PRs fuer den aktuellen Branch, verlinkt Repository und PR, erstellt neue PRs mit sichtbarer Base-/Head-Auswahl sowie Titel/Beschreibung und schreibt Lade-, Erfolgs- und Fehlerzustaende in Repository-Kontext und Git Output. Fokussierte Main-/GitHub-/State-Tests sowie die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T29 - GitHub PR-Status und Checks anzeigen
