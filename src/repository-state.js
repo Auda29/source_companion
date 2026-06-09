@@ -81,7 +81,8 @@ async function loadRepositoryState({
   });
   const remotes = remoteResult.ok ? parseRemotes(remoteResult.stdout) : [];
   const primaryRemote = choosePrimaryRemote(remotes);
-  const github = createGitHubState(primaryRemote, githubAuth);
+  const githubSelection = selectGitHubRemote(remotes);
+  const github = createGitHubState(githubSelection, githubAuth);
   const conflicted = parsedStatus.files.filter((file) => file.conflicted);
   const kind = repositoryKind(primaryRemote, github);
   const health = remoteResult.ok ? conflicted.length > 0 ? "conflict" : healthFromOperations(operations) : "error";
@@ -254,6 +255,7 @@ function parseRemotes(output) {
     if (direction === "fetch") remote.fetchUrl = url;
     if (direction === "push") remote.pushUrl = url;
     if (!remote.url || direction === "fetch") remote.url = url;
+    remote.github = parseGitHubRemote(remote.url, remote.name);
     remote.kind = remote.github ? "github" : remoteKind(remote.url);
   });
 
@@ -264,7 +266,58 @@ function choosePrimaryRemote(remotes) {
   return remotes.find((remote) => remote.name === "origin") || remotes[0] || null;
 }
 
-function parseGitHubRemote(url) {
+function selectGitHubRemote(remotes) {
+  const githubRemotes = remotes.filter((remote) => remote.github);
+  if (githubRemotes.length === 0) {
+    if (remotes.length === 0) return null;
+    return {
+      status: "not-github-remote",
+      remote: null,
+      candidates: remotes.map(remoteCandidate),
+      message: "No GitHub remote is configured for this repository."
+    };
+  }
+
+  const origin = githubRemotes.find((remote) => remote.name === "origin");
+  if (origin) {
+    return {
+      status: "ready",
+      remote: origin,
+      candidates: githubRemotes.map(remoteCandidate),
+      message: null
+    };
+  }
+
+  if (githubRemotes.length === 1) {
+    return {
+      status: "ready",
+      remote: githubRemotes[0],
+      candidates: githubRemotes.map(remoteCandidate),
+      message: null
+    };
+  }
+
+  return {
+    status: "ambiguous-github-remotes",
+    remote: null,
+    candidates: githubRemotes.map(remoteCandidate),
+    message: "Multiple GitHub remotes are configured; choose one before using pull request actions."
+  };
+}
+
+function remoteCandidate(remote) {
+  return {
+    remoteName: remote.name,
+    name: remote.name,
+    url: remote.url,
+    owner: remote.github ? remote.github.owner : null,
+    repository: remote.github ? remote.github.repository : null,
+    fullName: remote.github ? remote.github.fullName : null,
+    kind: remote.kind
+  };
+}
+
+function parseGitHubRemote(url, remoteName = null) {
   const value = clean(url);
   const https = value.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
   const ssh = value.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
@@ -273,28 +326,48 @@ function parseGitHubRemote(url) {
 
   if (!match) return null;
 
+  const owner = match[1];
+  const repository = match[2];
   return {
-    owner: match[1],
-    name: match[2],
-    host: "github.com"
+    owner,
+    name: repository,
+    repository,
+    fullName: `${owner}/${repository}`,
+    host: "github.com",
+    remoteName: clean(remoteName) || null,
+    url: value,
+    htmlUrl: `https://github.com/${owner}/${repository}`
   };
 }
 
-function createGitHubState(remote, githubAuth) {
-  if (!remote || !remote.github) return null;
+function createGitHubState(selection, githubAuth) {
+  if (!selection) return null;
+  if (selection.status !== "ready") {
+    return {
+      status: selection.status,
+      message: selection.message,
+      candidates: selection.candidates || [],
+      authenticated: false,
+      user: null
+    };
+  }
 
+  const remote = selection.remote;
   const authenticated = Boolean(githubAuth && githubAuth.authenticated);
   return {
     ...remote.github,
+    status: "ready",
     remote: remote.name,
+    remoteName: remote.name,
+    url: remote.url,
     authenticated,
     user: authenticated ? clean(githubAuth.user) || null : null
   };
 }
 
 function repositoryKind(remote, github) {
-  if (github && github.authenticated) return "github-authenticated";
-  if (github) return "github-remote";
+  if (github && github.status === "ready" && github.authenticated) return "github-authenticated";
+  if (github && github.status === "ready") return "github-remote";
   if (remote) return "remote-repository";
   return "git-repository";
 }
@@ -422,7 +495,9 @@ function clean(value) {
 
 module.exports = {
   loadRepositoryState,
+  parseGitHubRemote,
   parsePorcelainStatus,
   parseRemotes,
+  selectGitHubRemote,
   parseStashList
 };

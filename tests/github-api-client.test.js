@@ -116,6 +116,62 @@ test("renderer bridge client creates repositories without exposing tokens", asyn
   assert.equal(result.repository.cloneUrl, "https://github.com/octo/published.git");
 });
 
+test("renderer bridge client handles pull requests without exposing tokens", async () => {
+  const calls = [];
+  const client = createGitHubBridgeClient({
+    listPullRequests: async (options) => {
+      calls.push(["list", options]);
+      return {
+        ok: true,
+        pullRequests: [{
+          id: 10,
+          number: 4,
+          title: "Add PR flow",
+          state: "open",
+          htmlUrl: "https://github.com/octo/source-companion/pull/4",
+          token: "must-not-leak",
+          head: { ref: "feature/pr", repo: { name: "source-companion", owner: { login: "octo" } } },
+          base: { ref: "main", repo: { name: "source-companion", owner: { login: "octo" } } }
+        }],
+        token: "must-not-leak"
+      };
+    },
+    createPullRequest: async (options) => {
+      calls.push(["create", options]);
+      return {
+        ok: true,
+        pullRequest: {
+          id: 11,
+          number: 5,
+          title: "Created PR",
+          state: "open",
+          htmlUrl: "https://github.com/octo/source-companion/pull/5",
+          token: "must-not-leak"
+        },
+        token: "must-not-leak"
+      };
+    }
+  });
+
+  const list = await client.listPullRequests({ owner: "octo", repo: "source-companion", branch: "feature/pr" });
+  const created = await client.createPullRequest({
+    owner: "octo",
+    repo: "source-companion",
+    base: "main",
+    head: "feature/pr",
+    title: "Created PR"
+  });
+
+  assert.equal(list.ok, true);
+  assert.equal(list.token, undefined);
+  assert.equal(list.pullRequests[0].token, undefined);
+  assert.equal(list.pullRequests[0].number, 4);
+  assert.equal(created.ok, true);
+  assert.equal(created.pullRequest.token, undefined);
+  assert.equal(created.pullRequest.number, 5);
+  assert.deepEqual(calls.map((call) => call[0]), ["list", "create"]);
+});
+
 test("stores device login token in secure store and returns token-free status", async () => {
   const tokenStore = new MemorySecureTokenStore();
   const client = createGitHubApiClient({
@@ -276,6 +332,145 @@ test("creates a GitHub repository with normalized API request", async () => {
   });
   assert.equal(result.repository.fullName, "octo/published");
   assert.equal(result.repository.visibility, "public");
+});
+
+test("loads pull requests for the current branch", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  const requests = [];
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return createResponse(200, [{
+        id: 10,
+        number: 4,
+        title: "Add PR flow",
+        state: "open",
+        draft: false,
+        html_url: "https://github.com/octo/source-companion/pull/4",
+        created_at: "2026-06-09T08:30:00Z",
+        updated_at: "2026-06-09T08:40:00Z",
+        head: {
+          label: "octo:feature/pr",
+          ref: "feature/pr",
+          sha: "abc123",
+          repo: {
+            name: "source-companion",
+            full_name: "octo/source-companion",
+            owner: { login: "octo" }
+          }
+        },
+        base: {
+          label: "octo:main",
+          ref: "main",
+          sha: "def456",
+          repo: {
+            name: "source-companion",
+            full_name: "octo/source-companion",
+            owner: { login: "octo" }
+          }
+        }
+      }]);
+    }
+  });
+
+  const result = await client.listPullRequests({
+    owner: "octo",
+    repo: "source-companion",
+    branch: "feature/pr"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.pullRequests.length, 1);
+  assert.equal(result.pullRequests[0].number, 4);
+  assert.equal(result.pullRequests[0].head.ref, "feature/pr");
+  assert.match(requests[0].url, /\/repos\/octo\/source-companion\/pulls\?/);
+  assert.match(requests[0].url, /head=octo%3Afeature%2Fpr/);
+  assert.equal(requests[0].options.headers.Authorization, "Bearer secret-token");
+});
+
+test("creates a pull request with normalized API request", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  const requests = [];
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return createResponse(201, {
+        id: 11,
+        number: 5,
+        title: "Add PR flow",
+        state: "open",
+        html_url: "https://github.com/octo/source-companion/pull/5",
+        head: { ref: "feature/pr", repo: { name: "source-companion", owner: { login: "octo" } } },
+        base: { ref: "main", repo: { name: "source-companion", owner: { login: "octo" } } }
+      });
+    }
+  });
+
+  const result = await client.createPullRequest({
+    owner: "octo",
+    repo: "source-companion",
+    base: "main",
+    head: "feature/pr",
+    title: "Add PR flow",
+    description: "Connects the PR API foundation."
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(requests[0].url, "https://api.github.com/repos/octo/source-companion/pulls");
+  assert.equal(requests[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    base: "main",
+    head: "feature/pr",
+    title: "Add PR flow",
+    body: "Connects the PR API foundation.",
+    draft: false
+  });
+  assert.equal(result.pullRequest.number, 5);
+  assert.equal(result.pullRequest.base.ref, "main");
+});
+
+test("reports missing GitHub remote mapping before pull request API calls", async () => {
+  const tokenStore = new MemorySecureTokenStore();
+  await tokenStore.write({
+    token: "secret-token",
+    login: "octo",
+    scopes: ["repo", "read:user"],
+    tokenSource: "device-flow"
+  });
+
+  let fetchCalled = false;
+  const client = createGitHubApiClient({
+    tokenStore,
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return createResponse(200, []);
+    }
+  });
+
+  const list = await client.listPullRequests({ branch: "feature/pr" });
+  const create = await client.createPullRequest({ base: "main", head: "feature/pr", title: "PR" });
+
+  assert.equal(list.ok, false);
+  assert.equal(list.error.kind, "github-remote-missing");
+  assert.equal(create.ok, false);
+  assert.equal(create.error.kind, "github-remote-missing");
+  assert.equal(fetchCalled, false);
 });
 
 test("blocks repository creation when stored token is missing required scopes", async () => {

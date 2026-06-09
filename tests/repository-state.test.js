@@ -9,8 +9,10 @@ const test = require("node:test");
 const { runGitCommand } = require("../src/git-cli-wrapper");
 const {
   loadRepositoryState,
+  parseGitHubRemote,
   parsePorcelainStatus,
-  parseRemotes
+  parseRemotes,
+  selectGitHubRemote
 } = require("../src/repository-state");
 
 test("classifies missing and non-git folders explicitly", async (t) => {
@@ -96,7 +98,13 @@ test("parses GitHub remotes and authenticated GitHub state", async (t) => {
   assert.deepEqual(state.github, {
     owner: "example",
     name: "source-companion",
+    repository: "source-companion",
+    fullName: "example/source-companion",
     host: "github.com",
+    remoteName: "origin",
+    url: "https://github.com/example/source-companion.git",
+    htmlUrl: "https://github.com/example/source-companion",
+    status: "ready",
     remote: "origin",
     authenticated: true,
     user: "wecke"
@@ -139,8 +147,69 @@ test("parses multiple remote URL styles", () => {
   assert.deepEqual(remotes[0].github, {
     owner: "example",
     name: "source-companion",
-    host: "github.com"
+    repository: "source-companion",
+    fullName: "example/source-companion",
+    host: "github.com",
+    remoteName: "origin",
+    url: "https://github.com/example/source-companion.git",
+    htmlUrl: "https://github.com/example/source-companion"
   });
   assert.equal(remotes[1].kind, "ssh");
   assert.equal(remotes[1].github, null);
+});
+
+test("normalizes HTTPS and SSH GitHub remote URLs", () => {
+  assert.deepEqual(parseGitHubRemote("https://github.com/example/source-companion.git", "origin"), {
+    owner: "example",
+    name: "source-companion",
+    repository: "source-companion",
+    fullName: "example/source-companion",
+    host: "github.com",
+    remoteName: "origin",
+    url: "https://github.com/example/source-companion.git",
+    htmlUrl: "https://github.com/example/source-companion"
+  });
+
+  assert.deepEqual(parseGitHubRemote("git@github.com:example/source-companion.git", "upstream"), {
+    owner: "example",
+    name: "source-companion",
+    repository: "source-companion",
+    fullName: "example/source-companion",
+    host: "github.com",
+    remoteName: "upstream",
+    url: "git@github.com:example/source-companion.git",
+    htmlUrl: "https://github.com/example/source-companion"
+  });
+
+  assert.deepEqual(parseGitHubRemote("ssh://git@github.com/example/source-companion.git", "fork"), {
+    owner: "example",
+    name: "source-companion",
+    repository: "source-companion",
+    fullName: "example/source-companion",
+    host: "github.com",
+    remoteName: "fork",
+    url: "ssh://git@github.com/example/source-companion.git",
+    htmlUrl: "https://github.com/example/source-companion"
+  });
+});
+
+test("reports ambiguous and non-GitHub remote mappings", () => {
+  const ambiguous = selectGitHubRemote(parseRemotes([
+    "fork\tgit@github.com:octo/source-companion.git (fetch)",
+    "fork\tgit@github.com:octo/source-companion.git (push)",
+    "upstream\thttps://github.com/example/source-companion.git (fetch)",
+    "upstream\thttps://github.com/example/source-companion.git (push)"
+  ].join("\n")));
+  assert.equal(ambiguous.status, "ambiguous-github-remotes");
+  assert.equal(ambiguous.remote, null);
+  assert.equal(ambiguous.candidates.length, 2);
+  assert.equal(ambiguous.candidates[0].remoteName, "fork");
+
+  const notGitHub = selectGitHubRemote(parseRemotes([
+    "origin\tgit@example.com:elsewhere/source-companion.git (fetch)",
+    "origin\tgit@example.com:elsewhere/source-companion.git (push)"
+  ].join("\n")));
+  assert.equal(notGitHub.status, "not-github-remote");
+  assert.equal(notGitHub.remote, null);
+  assert.equal(notGitHub.candidates[0].kind, "ssh");
 });

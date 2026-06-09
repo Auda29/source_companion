@@ -2348,7 +2348,9 @@
       logout: (options) => tauriInvoke("github_logout", options || {}),
       listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", options || {}),
       searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {}),
-      createRepository: (options) => tauriInvoke("github_create_repository", options || {})
+      createRepository: (options) => tauriInvoke("github_create_repository", options || {}),
+      listPullRequests: (options) => tauriInvoke("github_list_pull_requests", options || {}),
+      createPullRequest: (options) => tauriInvoke("github_create_pull_request", options || {})
     };
   }
 
@@ -2403,6 +2405,8 @@
 
   function githubLabel(github) {
     if (!github) return "Not linked";
+    if (github.status === "ambiguous-github-remotes") return "Ambiguous GitHub remotes";
+    if (github.status === "not-github-remote") return "No GitHub remote";
     const repo = github.owner && github.name ? `${github.owner}/${github.name}` : "GitHub remote";
     return github.authenticated ? `${repo} authenticated` : repo;
   }

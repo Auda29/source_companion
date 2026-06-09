@@ -82,6 +82,16 @@ class GitHubBridgeClient {
     return normalizeSingleRepositoryResult(result);
   }
 
+  async listPullRequests(options = {}) {
+    const result = await this.callBridge("listPullRequests", options);
+    return normalizePullRequestResult(result);
+  }
+
+  async createPullRequest(options = {}) {
+    const result = await this.callBridge("createPullRequest", options);
+    return normalizeSinglePullRequestResult(result);
+  }
+
   async callBridge(method, payload) {
     if (!this.bridge || typeof this.bridge[method] !== "function") {
       throw createGitHubError({
@@ -337,6 +347,130 @@ class GitHubApiClient {
     };
   }
 
+  async listPullRequests({ owner, repo, repository, branch, headOwner, state = "open", maxPages } = {}) {
+    const locator = normalizeRepositoryLocator({ owner, repo, repository });
+    if (!locator.ok) {
+      return {
+        ok: false,
+        pullRequests: [],
+        error: locator.error
+      };
+    }
+
+    const normalizedBranch = clean(branch);
+    if (!normalizedBranch) {
+      return {
+        ok: false,
+        pullRequests: [],
+        error: createGitHubError({
+          kind: "invalid-request",
+          message: "Current branch is required to load GitHub pull requests."
+        })
+      };
+    }
+
+    const auth = await this.getAuthStatus();
+    if (!auth.authenticated) {
+      return {
+        ok: false,
+        pullRequests: [],
+        error: auth.error || createGitHubError({
+          kind: "github-auth-missing",
+          message: "GitHub login is required for this action."
+        })
+      };
+    }
+
+    const pullRequests = [];
+    const pages = Number.isInteger(maxPages) ? maxPages : 3;
+    const head = `${clean(headOwner) || locator.owner}:${normalizedBranch}`;
+    for (let page = 1; page <= pages; page += 1) {
+      const result = await this.requestJson(
+        `/repos/${encodeURIComponent(locator.owner)}/${encodeURIComponent(locator.repo)}/pulls` +
+          `?state=${encodeURIComponent(clean(state) || "open")}` +
+          `&head=${encodeURIComponent(head)}&sort=updated&direction=desc&per_page=100&page=${page}`
+      );
+      if (!result.ok) {
+        return {
+          ok: false,
+          pullRequests,
+          error: result.error
+        };
+      }
+
+      const items = Array.isArray(result.data) ? result.data : [];
+      pullRequests.push(...items.map(normalizePullRequest));
+      if (items.length < 100) break;
+    }
+
+    return {
+      ok: true,
+      pullRequests,
+      error: null
+    };
+  }
+
+  async createPullRequest({ owner, repo, repository, base, head, title, description = "", draft = false } = {}) {
+    const locator = normalizeRepositoryLocator({ owner, repo, repository });
+    if (!locator.ok) {
+      return {
+        ok: false,
+        pullRequest: null,
+        error: locator.error
+      };
+    }
+
+    const normalizedBase = clean(base);
+    const normalizedHead = clean(head);
+    const normalizedTitle = clean(title);
+    if (!normalizedBase || !normalizedHead || !normalizedTitle) {
+      return {
+        ok: false,
+        pullRequest: null,
+        error: createGitHubError({
+          kind: "invalid-request",
+          message: "Base branch, head branch, and title are required to create a GitHub pull request."
+        })
+      };
+    }
+
+    const auth = await this.getAuthStatus();
+    if (!auth.authenticated) {
+      return {
+        ok: false,
+        pullRequest: null,
+        error: auth.error || createGitHubError({
+          kind: "github-auth-missing",
+          message: "GitHub login is required for this action."
+        })
+      };
+    }
+
+    const result = await this.requestJson(`/repos/${encodeURIComponent(locator.owner)}/${encodeURIComponent(locator.repo)}/pulls`, {
+      method: "POST",
+      body: {
+        base: normalizedBase,
+        head: normalizedHead,
+        title: normalizedTitle,
+        body: clean(description),
+        draft: Boolean(draft)
+      }
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        pullRequest: null,
+        error: result.error
+      };
+    }
+
+    return {
+      ok: true,
+      pullRequest: normalizePullRequest(result.data),
+      error: null
+    };
+  }
+
   async requestJson(path, { token, method = "GET", body } = {}) {
     if (typeof this.fetch !== "function") {
       return {
@@ -466,6 +600,32 @@ function normalizeSingleRepositoryResult(result) {
   };
 }
 
+function normalizePullRequestResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  return {
+    ok,
+    pullRequests: Array.isArray(source.pullRequests) ? source.pullRequests.map(normalizePullRequest) : [],
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub pull requests could not be loaded."
+    }))
+  };
+}
+
+function normalizeSinglePullRequestResult(result) {
+  const source = result || {};
+  const ok = Boolean(source.ok);
+  return {
+    ok,
+    pullRequest: ok && source.pullRequest ? normalizePullRequest(source.pullRequest) : null,
+    error: ok ? null : normalizeGitHubError(source.error || createGitHubError({
+      kind: "github-api-error",
+      message: "GitHub pull request could not be created."
+    }))
+  };
+}
+
 function normalizeRepository(repo) {
   const owner = repo && repo.owner && typeof repo.owner === "object" ? clean(repo.owner.login) : clean(repo && repo.owner);
   const name = clean(repo && repo.name);
@@ -484,6 +644,59 @@ function normalizeRepository(repo) {
     sshUrl: clean(repo && (repo.ssh_url || repo.sshUrl)),
     htmlUrl: clean(repo && (repo.html_url || repo.htmlUrl)),
     updatedAt: clean(repo && (repo.updated_at || repo.updatedAt))
+  };
+}
+
+function normalizePullRequest(pr) {
+  const source = pr || {};
+  return {
+    id: source.id || null,
+    number: Number.isInteger(source.number) ? source.number : null,
+    title: clean(source.title),
+    state: clean(source.state) || "unknown",
+    draft: Boolean(source.draft),
+    htmlUrl: clean(source.html_url || source.htmlUrl),
+    url: clean(source.url),
+    createdAt: clean(source.created_at || source.createdAt),
+    updatedAt: clean(source.updated_at || source.updatedAt),
+    mergedAt: clean(source.merged_at || source.mergedAt) || null,
+    head: normalizePullRequestRef(source.head),
+    base: normalizePullRequestRef(source.base)
+  };
+}
+
+function normalizePullRequestRef(ref) {
+  const source = ref || {};
+  const repo = source.repo || {};
+  const owner = repo.owner && typeof repo.owner === "object" ? clean(repo.owner.login) : clean(repo.owner);
+  return {
+    label: clean(source.label),
+    ref: clean(source.ref),
+    sha: clean(source.sha),
+    owner,
+    repo: clean(repo.name),
+    fullName: clean(repo.full_name || repo.fullName) || (owner && repo.name ? `${owner}/${repo.name}` : "")
+  };
+}
+
+function normalizeRepositoryLocator({ owner, repo, repository } = {}) {
+  const source = repository || {};
+  const normalizedOwner = clean(owner || source.owner);
+  const normalizedRepo = clean(repo || source.repo || source.name || source.repository);
+  if (!normalizedOwner || !normalizedRepo) {
+    return {
+      ok: false,
+      error: createGitHubError({
+        kind: "github-remote-missing",
+        message: "A GitHub owner and repository are required for this action."
+      })
+    };
+  }
+
+  return {
+    ok: true,
+    owner: normalizedOwner,
+    repo: normalizedRepo
   };
 }
 
@@ -685,6 +898,7 @@ if (typeof module !== "undefined" && module.exports) {
     createGitHubApiClient,
     createGitHubBridgeClient,
     normalizeGitHubError,
+    normalizePullRequest,
     normalizeRepository
   };
 }

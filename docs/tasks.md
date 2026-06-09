@@ -298,13 +298,13 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T21 - Einklappbaren Graph/History-Bereich bauen
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T6`, `T8`, `T11`
 - Definition of Done: Einklappbarer Graph/History-Bereich zeigt Commit-History, aktuellen Branch, Remote-Branch, HEAD, Commit-Metadaten, Commit-Diff und lokale/remote Divergenz; Bereich bleibt optional sichtbar und verdraengt die Kern-Source-Control-UI nicht dauerhaft.
 - Implementierungsnotiz: Kein Activity Feed, keine Analytics, kein Projektmanagement-Dashboard.
 - Notiz: `src/repository-history.js` laedt Commit-History und HEAD-Commit-Diff ueber den whitelisted `git log`-Wrapper; `src/repository-state.js` haengt History-Daten inklusive HEAD-SHA an den Repository-Kontext, und `src/main.js` rendert einen standardmaessig eingeklappten Graph/History-Bereich mit Branch, Remote-Branch, HEAD, Divergenz, Commit-Metadaten und Diff. Fokussierte History-/Main-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
-- Review-Ergebnis: -
+- Review-Ergebnis: Bestanden am 2026-06-09. `src/repository-history.js` laedt Commit-History und HEAD-Commit-Diff ueber den whitelisted Git-Wrapper, `src/repository-state.js` haengt History inklusive HEAD-SHA an den Repository-Kontext, und `src/main.js` rendert den Bereich standardmaessig eingeklappt mit Branch, Remote-Branch, HEAD, Divergenz, Commit-Metadaten und Diff. Fokussierte History-/State-/GitHub-Tests sowie die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T23 - Git Output, Fehlertexte und Sicherheitswarnungen fertigstellen
@@ -325,7 +325,7 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 - Abhaengigkeiten: `T8`, `T12`, `T13`, `T14`, `T16`, `T17`, `T23`, `T47`, `T29`, `T30`, `T38`, `T39`, `T40`, `T43`
 - Definition of Done: Automatisierte oder manuelle Repro-Schritte decken Repo ohne Git, Git init, Clone, Publish, Status, Diff, Datei- und Hunk-Staging, Commit, Amend, Branch-Wechsel, Pull/Push-Fehler, Stash, GitHub Auth-Fehler und PR/Checks ab; ausgeschlossene Features wie Editor, Terminal, Force Push und Workspaces sind in Tests oder Architekturentscheidungen abgesichert.
 - Implementierungsnotiz: Testabdeckung nach Risiko waehlen. Falls ein Flow nur manuell pruefbar ist, klare Schritte und erwartetes Ergebnis dokumentieren.
-- Notiz: 2026-06-09 11:45 CEST erneut nicht umgesetzt, weil T24 von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
+- Notiz: 2026-06-09 12:45 CEST erneut nicht umgesetzt, weil T24 weiterhin von den offenen PR-/Checks-Aufgaben `T47`, `T29` und `T30` abhaengt. Die Review-Checkliste kann erst vollstaendig auf `review` gehen, wenn diese GitHub-Flows implementiert sind.
 - Review-Ergebnis: -
 - Offene Review-Punkte: -
 
@@ -351,12 +351,13 @@ Stand 2026-06-09: Die GitHub-PR-Aufgabe `T28` wurde durch `T46` und `T47` ersetz
 
 ### T46 - GitHub Remote-Erkennung und PR-API-Grundlage bauen
 
-- Status: `todo`
+- Status: `done`
 - Prioritaet: `P2`
 - Abhaengigkeiten: `T16`, `T38`
 - Definition of Done: GitHub-Remote wird aus den Git-Remotes des aktiven Repository-Kontexts erkannt und in Owner/Repository, Remote-Name und URL normalisiert; HTTPS- und SSH-GitHub-URLs werden unterstuetzt; nicht-GitHub-Remotes und mehrdeutige Remotes liefern lesbare Zustaende; der GitHub API Client kann vorhandene PRs fuer den aktuellen Branch laden und neue PRs mit Base-Branch, Titel und Beschreibung erstellen; fehlende Auth, fehlende Remote-Zuordnung, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert zurueckgegeben.
 - Implementierungsnotiz: API-Methoden und Remote-Erkennung ohne UI-Spezialfaelle kapseln. Keine Issue Board-, Kanban-, Notification- oder Dashboard-Funktionen aufnehmen.
-- Review-Ergebnis: -
+- Notiz: 2026-06-09 12:19 CEST umgesetzt: Repository-State normalisiert GitHub-Remotes inklusive Owner/Repository, Remote-Name, URL und HTML-Link, erkennt HTTPS-/SSH-URLs und liefert lesbare Zustaende fuer nicht-GitHub- und mehrdeutige Remotes. `GitHubApiClient` und Renderer-Bridge koennen PRs fuer den aktuellen Branch laden und neue PRs erstellen; fehlende Remote-Zuordnung und bestehende Auth-/Scope-/Rate-Limit-/Netzwerk-/API-Fehler werden strukturiert zurueckgegeben. Fokussierte Tests und vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
+- Review-Ergebnis: Bestanden am 2026-06-09. Repository-State normalisiert GitHub-Remotes aus HTTPS- und SSH-URLs inklusive Owner/Repository, Remote-Name, URL und HTML-Link, meldet nicht-GitHub- und mehrdeutige Remotes lesbar, und `GitHubApiClient` plus Renderer-Bridge laden vorhandene PRs fuer den aktuellen Branch bzw. erstellen neue PRs mit Base, Head, Titel und Beschreibung. Fehlende Auth, fehlende Remote-Zuordnung, fehlende Scopes, Rate-Limits, Netzwerkfehler und API-Fehler werden strukturiert behandelt. Fokussierte GitHub-/State-Tests und die vollstaendige Node-Test-Suite bestanden mit Preserve-Symlink-Flags.
 - Offene Review-Punkte: -
 
 ### T47 - GitHub PR-Erstellung im Repository-UI verdrahten
