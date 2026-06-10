@@ -1,6 +1,6 @@
 [package]
 name = "source-companion"
-version = "0.1.0"
+version = "0.1.3"
 description = "A focused Git and GitHub source-control desktop shell."
 authors = ["Source Companion"]
 license = "MIT"

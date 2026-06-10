@@ -69,6 +69,32 @@ test("desktop bridge docs do not claim a bundled node runtime", () => {
   assert.match(bridgeDoc, /desktop-bridge-runtime-missing/);
 });
 
+test("desktop package versions stay aligned for release assets", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+  const tauriConfig = JSON.parse(fs.readFileSync(path.join(projectRoot, "src-tauri", "tauri.conf.json"), "utf8"));
+  const cargoManifest = fs.readFileSync(path.join(projectRoot, "src-tauri", "Cargo.toml"), "utf8");
+  const cargoVersion = cargoManifest.match(/^version\s*=\s*"([^"]+)"/m);
+
+  assert.ok(cargoVersion, "Cargo manifest must declare a package version.");
+  assert.equal(packageJson.version, tauriConfig.version);
+  assert.equal(packageJson.version, cargoVersion[1]);
+});
+
+test("windows release workflow syncs app version from the release tag before building", () => {
+  const workflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "release-windows.yml"), "utf8");
+  assert.ok(
+    workflow.indexOf("Sync app version from release tag") < workflow.indexOf("Install Node dependencies"),
+    "release workflow must sync versions before installing and building"
+  );
+  assert.ok(
+    workflow.indexOf("Sync app version from release tag") < workflow.lastIndexOf("Build Windows desktop bundle"),
+    "release workflow must sync versions before tauri build"
+  );
+  assert.match(workflow, /package\.json/);
+  assert.match(workflow, /src-tauri\/tauri\.conf\.json/);
+  assert.match(workflow, /src-tauri\/Cargo\.toml/);
+});
+
 test("desktop asset copy keeps the current html ui entry and src assets", () => {
   const outputDir = path.join(projectRoot, "desktop-dist");
   fs.rmSync(outputDir, { recursive: true, force: true });

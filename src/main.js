@@ -1,7 +1,7 @@
 (function () {
   const STORAGE_KEY = "source-companion.recentRepositories.v1";
   const MAX_RECENT = 8;
-  const desktopBridge = resolveDesktopRepositoryBridge();
+  let desktopBridge = resolveDesktopRepositoryBridge();
 
   const state = {
     desktopBridge,
@@ -142,6 +142,7 @@
     if (!dialog) return;
 
     if (name === "github") {
+      ensureGitHubClient();
       renderGitHubDialog();
       if (state.githubClient && state.githubAuth.status === "idle") {
         refreshGitHubAuthStatus("dialog");
@@ -172,7 +173,8 @@
   }
 
   async function handleFolderDialog(flow, button) {
-    if (!state.desktopBridge) {
+    const bridge = ensureDesktopBridge();
+    if (!bridge) {
       setMessage("error", "Native folder dialogs are only available in the desktop app.");
       render();
       return;
@@ -190,7 +192,7 @@
       github: "target",
       publish: "path"
     }[flow];
-    if (!method || typeof state.desktopBridge[method] !== "function") return;
+    if (!method || typeof bridge[method] !== "function") return;
 
     const form = button && typeof button.closest === "function" ? button.closest("form") : null;
     const input = form && typeof form.querySelector === "function"
@@ -198,7 +200,7 @@
       : null;
 
     try {
-      const result = await state.desktopBridge[method]({ flow });
+      const result = await bridge[method]({ flow });
       if (!result || result.canceled) {
         setMessage("error", "Folder selection canceled.");
         render();
@@ -1054,7 +1056,8 @@
   }
 
   async function refreshGitHubAuthStatus(reason) {
-    if (!state.githubClient || typeof state.githubClient.getAuthStatus !== "function") {
+    const githubClient = ensureGitHubClient();
+    if (!githubClient || typeof githubClient.getAuthStatus !== "function") {
       state.githubAuth = noGitHubAuthStatus({
         kind: "github-login-unavailable",
         message: "GitHub login is not available in this runtime."
@@ -1072,7 +1075,7 @@
     renderGitHubDialog();
 
     try {
-      state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.getAuthStatus());
+      state.githubAuth = normalizeGitHubAuthStatus(await githubClient.getAuthStatus());
     } catch (error) {
       state.githubAuth = noGitHubAuthStatus({
         kind: "github-auth-error",
@@ -1085,7 +1088,8 @@
   }
 
   async function runGitHubAuthAction(action) {
-    if (!state.githubClient) {
+    const githubClient = ensureGitHubClient();
+    if (!githubClient) {
       state.githubAuth = noGitHubAuthStatus({
         kind: "github-login-unavailable",
         message: "GitHub login is not available in this runtime."
@@ -1102,10 +1106,10 @@
     renderGitHubDialog();
 
     try {
-      if (action === "login" && typeof state.githubClient.login === "function") {
-        state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.login());
-      } else if (action === "logout" && typeof state.githubClient.logout === "function") {
-        state.githubAuth = normalizeGitHubAuthStatus(await state.githubClient.logout());
+      if (action === "login" && typeof githubClient.login === "function") {
+        state.githubAuth = normalizeGitHubAuthStatus(await githubClient.login());
+      } else if (action === "logout" && typeof githubClient.logout === "function") {
+        state.githubAuth = normalizeGitHubAuthStatus(await githubClient.logout());
         state.githubRepositories.items = [];
         state.githubRepositories.selected = null;
       } else {
@@ -1126,6 +1130,7 @@
   }
 
   async function searchGitHubRepositories() {
+    const githubClient = ensureGitHubClient();
     const query = githubRepoSearch ? githubRepoSearch.value : state.githubRepositories.query;
     state.githubRepositories = {
       ...state.githubRepositories,
@@ -1135,7 +1140,7 @@
     };
     renderGitHubDialog();
 
-    if (!state.githubClient || typeof state.githubClient.searchUserRepositories !== "function") {
+    if (!githubClient || typeof githubClient.searchUserRepositories !== "function") {
       state.githubRepositories = {
         ...state.githubRepositories,
         status: "failed",
@@ -1150,7 +1155,7 @@
     }
 
     try {
-      const result = await state.githubClient.searchUserRepositories({ query });
+      const result = await githubClient.searchUserRepositories({ query });
       state.githubRepositories = {
         ...state.githubRepositories,
         status: result.ok ? "idle" : "failed",
@@ -3205,6 +3210,40 @@
     }
 
     return null;
+  }
+
+  function ensureDesktopBridge() {
+    if (desktopBridge) return desktopBridge;
+
+    desktopBridge = resolveDesktopRepositoryBridge();
+    if (!desktopBridge) return null;
+    if (typeof window !== "undefined" && !window.SourceCompanionDesktopBridge) {
+      window.SourceCompanionDesktopBridge = desktopBridge;
+    }
+
+    state.desktopBridge = desktopBridge;
+    state.repositoryStateLoader = resolveRepositoryStateLoader();
+    state.repositoryDiffLoader = resolveRepositoryDiffLoader();
+    state.repositoryFileActionRunner = resolveRepositoryFileActionRunner();
+    state.repositoryHunkActionRunner = resolveRepositoryHunkActionRunner();
+    state.repositoryCommitActionRunner = resolveRepositoryCommitActionRunner();
+    state.repositoryBranchActionRunner = resolveRepositoryBranchActionRunner();
+    state.repositorySyncActionRunner = resolveRepositorySyncActionRunner();
+    state.repositoryMergeActionRunner = resolveRepositoryMergeActionRunner();
+    state.repositoryStashActionRunner = resolveRepositoryStashActionRunner();
+    state.repositoryCloneActionRunner = resolveRepositoryCloneActionRunner();
+    state.repositoryPublishPreflightRunner = resolveRepositoryPublishPreflightRunner();
+    state.repositoryPublishActionRunner = resolveRepositoryPublishActionRunner();
+    state.repositoryStatusWatcher = resolveRepositoryStatusWatcher(state.repositoryStateLoader);
+    return desktopBridge;
+  }
+
+  function ensureGitHubClient() {
+    ensureDesktopBridge();
+    if (!state.githubClient) {
+      state.githubClient = resolveGitHubClient();
+    }
+    return state.githubClient;
   }
 
   function toDesktopPublishRequest(request = {}) {

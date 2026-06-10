@@ -33,6 +33,30 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Sync app version from release tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          if (-not ($version -match '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')) {
+            throw "Release tag '$tag' does not contain a valid app version."
+          }
+
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $package.version = $version
+          $package | ConvertTo-Json -Depth 20 | Set-Content package.json -Encoding UTF8
+
+          $tauriConfigPath = "src-tauri/tauri.conf.json"
+          $tauriConfig = Get-Content $tauriConfigPath -Raw | ConvertFrom-Json
+          $tauriConfig.version = $version
+          $tauriConfig | ConvertTo-Json -Depth 20 | Set-Content $tauriConfigPath -Encoding UTF8
+
+          $cargoManifestPath = "src-tauri/Cargo.toml"
+          $cargoManifest = Get-Content $cargoManifestPath -Raw
+          $cargoManifest = $cargoManifest -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$version`""
+          Set-Content $cargoManifestPath -Value $cargoManifest -Encoding UTF8
+
       - name: Install Node dependencies
         run: npm install
 

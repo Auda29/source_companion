@@ -162,7 +162,7 @@ test("desktop folder picker fills clone target field", async () => {
   assert.equal(cloneForm.getInput("target").value, "C:\\code\\picked-repo");
 });
 
-test("tauri global bridge enables github login in the desktop clone dialog", async () => {
+test("late tauri global bridge enables github login in the desktop clone dialog", async () => {
   const desktopBridgeScript = fs.readFileSync(path.join(__dirname, "..", "src", "desktop-bridge.js"), "utf8");
   const githubClientScript = fs.readFileSync(path.join(__dirname, "..", "src", "github-api-client.js"), "utf8");
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
@@ -180,6 +180,31 @@ test("tauri global bridge enables github login in the desktop clone dialog", asy
     githubRepoList: new FakeElement()
   });
   const commands = [];
+  const tauri = {
+    core: {
+      invoke: async (command, payload) => {
+        commands.push({ command, payload });
+        if (command === "github_get_auth_status") {
+          return {
+            authenticated: false,
+            user: null,
+            error: null
+          };
+        }
+        if (command === "github_login") {
+          return {
+            authenticated: false,
+            user: null,
+            error: {
+              kind: "github-login-unavailable",
+              message: "GitHub OAuth client ID is not configured for desktop login."
+            }
+          };
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      }
+    }
+  };
 
   const context = {
     document,
@@ -194,32 +219,7 @@ test("tauri global bridge enables github login in the desktop clone dialog", asy
     Number,
     RegExp,
     window: {
-      confirm: () => true,
-      __TAURI__: {
-        core: {
-          invoke: async (command, payload) => {
-            commands.push({ command, payload });
-            if (command === "github_get_auth_status") {
-              return {
-                authenticated: false,
-                user: null,
-                error: null
-              };
-            }
-            if (command === "github_login") {
-              return {
-                authenticated: false,
-                user: null,
-                error: {
-                  kind: "github-login-unavailable",
-                  message: "GitHub OAuth client ID is not configured for desktop login."
-                }
-              };
-            }
-            throw new Error(`Unexpected command: ${command}`);
-          }
-        }
-      }
+      confirm: () => true
     }
   };
 
@@ -228,19 +228,18 @@ test("tauri global bridge enables github login in the desktop clone dialog", asy
   vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(typeof context.window.SourceCompanionDesktopBridge.loginGitHub, "function");
-  assert.match(githubAuthStatus.innerHTML, /Not logged in/);
-  assert.doesNotMatch(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
+  assert.equal(context.window.SourceCompanionDesktopBridge, undefined);
+  assert.match(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
+
+  context.window.__TAURI__ = tauri;
 
   githubDialog.listeners.click({
     target: new FakeDatasetTarget({ githubAuthAction: "login" })
   });
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.deepEqual(commands.map((call) => call.command), [
-    "github_get_auth_status",
-    "github_login"
-  ]);
+  assert.equal(typeof context.window.SourceCompanionDesktopBridge.loginGitHub, "function");
+  assert.deepEqual(commands.map((call) => call.command), ["github_login"]);
   assert.match(githubAuthStatus.innerHTML, /GitHub OAuth client ID is not configured for desktop login/);
   assert.doesNotMatch(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
 });
