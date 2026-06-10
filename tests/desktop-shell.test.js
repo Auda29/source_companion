@@ -14,6 +14,16 @@ test("tauri shell packages only copied full-ui assets", () => {
   assert.equal(config.build.frontendDist, "../desktop-dist");
   assert.equal(config.app.windows.length, 1);
   assert.equal(config.app.windows[0].label, "main");
+  assert.equal(config.app.windows[0].icon, "icons/icon.png");
+  assert.deepEqual(config.bundle.icon, [
+    "icons/32x32.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/icon.png"
+  ]);
+  for (const iconPath of config.bundle.icon) {
+    assert.equal(fs.existsSync(path.join(projectRoot, "src-tauri", iconPath)), true);
+  }
   assert.match(config.app.security.csp, /script-src 'self'/);
   assert.doesNotMatch(config.app.security.csp, /unsafe-eval/);
 
