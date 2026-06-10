@@ -32,6 +32,17 @@ test("maps publish request to validated GitHub repository options", () => {
   assert.equal(request.initIfNeeded, true);
 });
 
+test("accepts Windows absolute publish folders on non-Windows CI", () => {
+  const request = buildPublishActionRequest({
+    repositoryPath: "C:\\repo",
+    name: "source-companion",
+    visibility: "private"
+  });
+
+  assert.equal(request.ok, true);
+  assert.equal(request.repositoryPath, "C:\\repo");
+});
+
 test("rejects invalid publish requests before GitHub or Git execution", async () => {
   const result = await runPublishAction({
     repositoryPath: "relative",

@@ -1,8 +1,7 @@
 "use strict";
 
-const path = require("node:path");
-
 const { runGitCommand } = require("./git-cli-wrapper");
+const { isAbsoluteLocalPath } = require("./path-validation");
 
 async function runCloneAction({
   url,
@@ -46,7 +45,7 @@ function buildCloneActionRequest({ url, targetPath } = {}) {
     return createInvalidResult("Enter an absolute target folder.");
   }
 
-  if (!path.isAbsolute(normalizedTargetPath)) {
+  if (!isAbsoluteLocalPath(normalizedTargetPath)) {
     return createInvalidResult("Target folder must be an absolute path.");
   }
 

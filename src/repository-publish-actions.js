@@ -1,8 +1,7 @@
 "use strict";
 
-const path = require("node:path");
-
 const { runGitCommand } = require("./git-cli-wrapper");
+const { isAbsoluteLocalPath } = require("./path-validation");
 
 async function runPublishAction({
   repositoryPath,
@@ -345,7 +344,7 @@ function buildPublishActionRequest({
   const normalizedVisibility = clean(visibility) || "private";
 
   if (!normalizedPath) return createInvalidResult("Enter an absolute local folder.");
-  if (!path.isAbsolute(normalizedPath)) return createInvalidResult("Local folder must be an absolute path.");
+  if (!isAbsoluteLocalPath(normalizedPath)) return createInvalidResult("Local folder must be an absolute path.");
   if (!isValidRepositoryName(normalizedName)) {
     return createInvalidResult("Enter a GitHub repository name using letters, numbers, dots, dashes, or underscores.");
   }

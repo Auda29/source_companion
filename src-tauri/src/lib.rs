@@ -28,7 +28,8 @@ impl DesktopBridgeState {
     }
 
     fn invoke(&self, method: &'static str, request: Option<Value>) -> Result<Value, String> {
-        self.worker.invoke(method, request.unwrap_or_else(|| json!({})))
+        self.worker
+            .invoke(method, request.unwrap_or_else(|| json!({})))
     }
 }
 

@@ -32,6 +32,17 @@ test("maps clone request to a structured Git wrapper command", () => {
   });
 });
 
+test("accepts Windows absolute clone targets on non-Windows CI", () => {
+  const request = buildCloneActionRequest({
+    url: "https://github.com/owner/repo.git",
+    targetPath: "C:\\code\\source-companion"
+  });
+
+  assert.equal(request.ok, true);
+  assert.equal(request.commandRequest.repositoryPath, "C:\\code\\source-companion");
+  assert.equal(request.commandRequest.options.targetPath, "C:\\code\\source-companion");
+});
+
 test("rejects invalid clone requests before Git execution", async () => {
   const invalidUrl = await runCloneAction({
     url: "file:///tmp/repo",
