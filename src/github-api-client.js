@@ -1268,22 +1268,23 @@ function createMacOSCredentialAdapter(runCommand) {
       return result.stdout.trim();
     },
     async write({ service, account, login, token }) {
-      await runCommand("security", [
-        "add-generic-password",
-        "-U",
-        "-s",
-        service,
-        "-a",
-        account,
-        "-l",
-        "Source Companion GitHub Token",
-        "-D",
-        "application password",
-        "-j",
-        login,
-        "-w",
-        token
-      ]);
+      await runCommand("security", ["-i"], {
+        stdin: macOSSecurityInteractiveCommand("add-generic-password", [
+          "-U",
+          "-s",
+          service,
+          "-a",
+          account,
+          "-l",
+          "Source Companion GitHub Token",
+          "-D",
+          "application password",
+          "-j",
+          login,
+          "-w",
+          token
+        ])
+      });
     },
     async delete({ service, account }) {
       await runCommand("security", [
@@ -1295,6 +1296,21 @@ function createMacOSCredentialAdapter(runCommand) {
       ], { allowFailure: true });
     }
   };
+}
+
+function macOSSecurityInteractiveCommand(command, args) {
+  const tokens = [command, ...args.map(macOSSecurityInteractiveArgument)];
+  return `${tokens.join(" ")}\nquit\n`;
+}
+
+function macOSSecurityInteractiveArgument(value) {
+  const text = String(value || "");
+  if (text.startsWith("-")) return text;
+  return `"${text
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")}"`;
 }
 
 function createLinuxCredentialAdapter(runCommand) {

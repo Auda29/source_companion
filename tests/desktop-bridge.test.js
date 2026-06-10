@@ -124,7 +124,31 @@ test("tauri native app registers every repository bridge command", () => {
 
   assert.match(lib, /tauri_plugin_dialog::init/);
   assert.match(lib, /blocking_pick_folder/);
-  assert.match(lib, /DesktopBridgeWorker::start/);
+  assert.match(lib, /\.setup\(\|app\|/);
+  assert.match(lib, /DesktopBridgeState::new\(app\.handle\(\)\)/);
+  assert.match(lib, /worker:\s*Result<DesktopBridgeWorker,\s*String>/);
+  assert.match(lib, /app\.manage\(DesktopBridgeState::new\(app\.handle\(\)\)\)/);
+  assert.doesNotMatch(
+    lib,
+    /DesktopBridgeState::new\(app\.handle\(\)\)\.map_err/,
+    "bridge startup errors must not abort Tauri setup"
+  );
+  assert.match(lib, /DesktopBridgeWorker::start\(app\)/);
+  assert.match(lib, /app\s*\.path\(\)\s*\.resource_dir\(\)/);
+  assert.ok(
+    lib.indexOf('env::var("SOURCE_COMPANION_DESKTOP_BRIDGE_WORKER")') <
+      lib.indexOf(".resource_dir()"),
+    "explicit worker override must be checked before bundled resources"
+  );
+  assert.ok(
+    lib.indexOf(".resource_dir()") < lib.indexOf('env!("CARGO_MANIFEST_DIR")'),
+    "bundled worker resource must be checked before the development source fallback"
+  );
+  assert.match(lib, /desktop-bridge-worker-missing/);
+  assert.match(lib, /format_bridge_start_error/);
+  assert.match(lib, /ErrorKind::NotFound/);
+  assert.match(lib, /desktop-bridge-runtime-missing/);
+  assert.match(lib, /SOURCE_COMPANION_NODE_BINARY/);
   assert.match(lib, /desktop-bridge-worker\.js/);
   assert.match(lib, /--preserve-symlinks/);
   assert.match(lib, /--preserve-symlinks-main/);

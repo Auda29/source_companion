@@ -226,14 +226,35 @@ async function preparePublishPreflight({
     });
     checks.push(initCheck);
 
+    if (request.initIfNeeded) {
+      const commitCheck = createPreflightCheck({
+        id: "commits-present",
+        label: "Initial commit",
+        ok: false,
+        message: "Create a commit after Git init before publishing this repository to GitHub."
+      });
+      checks.push(commitCheck);
+
+      return createPreflightResult({
+        ok: false,
+        request,
+        checks,
+        message: commitCheck.message,
+        error: {
+          kind: "no-commits",
+          message: "Publish needs an initial commit before origin can be pushed."
+        },
+        needsGitInit: true,
+        needsCommit: true
+      });
+    }
+
     return createPreflightResult({
-      ok: request.initIfNeeded,
+      ok: false,
       request,
       checks,
-      message: request.initIfNeeded
-        ? "Publish inputs are ready. The publish runner can initialize Git, create the GitHub repository, set origin, and push."
-        : initCheck.message,
-      error: request.initIfNeeded ? null : {
+      message: initCheck.message,
+      error: {
         kind: "git-init-required",
         message: "Git init must be explicitly confirmed."
       },

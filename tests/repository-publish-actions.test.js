@@ -85,7 +85,7 @@ test("requires GitHub auth before inspecting local repository", async () => {
   assert.equal(executed, false);
 });
 
-test("preflight prepares confirmed Git init without running init", async () => {
+test("preflight blocks confirmed Git init until an initial commit exists", async () => {
   const repositoryPath = path.join(os.tmpdir(), "source-companion-publish-preflight-no-git");
   const executed = [];
   const result = await preparePublishPreflight({
@@ -111,9 +111,13 @@ test("preflight prepares confirmed Git init without running init", async () => {
     }
   });
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.action, "publish-preflight");
   assert.equal(result.needsGitInit, true);
+  assert.equal(result.needsCommit, true);
+  assert.equal(result.error.kind, "no-commits");
+  assert.match(result.message, /commit/i);
+  assert.equal(result.checks.some((check) => check.id === "commits-present" && !check.ok), true);
   assert.deepEqual(executed, ["status"]);
 });
 
@@ -177,6 +181,49 @@ test("requires explicit init for folders without Git", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.error.kind, "git-init-required");
+});
+
+test("confirmed init runner still blocks publish when the new repository has no commits", async () => {
+  const repositoryPath = path.join(os.tmpdir(), "source-companion-publish-init-no-commits");
+  const executed = [];
+  let createdRepository = false;
+  const result = await runPublishAction({
+    repositoryPath,
+    name: "repo",
+    initIfNeeded: true,
+    githubClient: authenticatedGitHubClient({
+      createRepository: async () => {
+        createdRepository = true;
+        throw new Error("should not create GitHub repo without commits");
+      }
+    }),
+    execute: async (command) => {
+      executed.push(command.action);
+      if (command.action === "status" && executed.length === 1) {
+        return {
+          ok: false,
+          action: command.action,
+          args: [],
+          stdout: "",
+          stderr: "fatal: not a git repository",
+          exitCode: 128,
+          error: {
+            kind: "git-error",
+            message: "Git command failed."
+          }
+        };
+      }
+      if (command.action === "init") return gitResult(command, "Initialized empty Git repository\n");
+      if (command.action === "status") return gitResult(command, "## No commits yet on main\n");
+      throw new Error("should not execute publish commands before initial commit");
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.kind, "no-commits");
+  assert.match(result.message, /commit/i);
+  assert.deepEqual(executed, ["status", "init", "status"]);
+  assert.equal(createdRepository, false);
 });
 
 test("refuses to publish repositories with existing remotes", async () => {

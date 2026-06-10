@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     env,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, ErrorKind, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
@@ -13,23 +13,25 @@ use std::{
     },
     thread,
 };
-use tauri::{LogicalSize, Size};
+use tauri::{AppHandle, LogicalSize, Manager, Size};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 struct DesktopBridgeState {
-    worker: DesktopBridgeWorker,
+    worker: Result<DesktopBridgeWorker, String>,
 }
 
 impl DesktopBridgeState {
-    fn new() -> Result<Self, String> {
-        Ok(Self {
-            worker: DesktopBridgeWorker::start()?,
-        })
+    fn new(app: &AppHandle) -> Self {
+        Self {
+            worker: DesktopBridgeWorker::start(app),
+        }
     }
 
     fn invoke(&self, method: &'static str, request: Option<Value>) -> Result<Value, String> {
-        self.worker
-            .invoke(method, request.unwrap_or_else(|| json!({})))
+        match &self.worker {
+            Ok(worker) => worker.invoke(method, request.unwrap_or_else(|| json!({}))),
+            Err(error) => Err(error.clone()),
+        }
     }
 }
 
@@ -54,8 +56,8 @@ struct WorkerEnvelope {
 }
 
 impl DesktopBridgeWorker {
-    fn start() -> Result<Self, String> {
-        let worker_path = bridge_worker_path()?;
+    fn start(app: &AppHandle) -> Result<Self, String> {
+        let worker_path = bridge_worker_path(app)?;
         let node_binary =
             env::var("SOURCE_COMPANION_NODE_BINARY").unwrap_or_else(|_| "node".to_string());
         let project_root = worker_path
@@ -77,7 +79,7 @@ impl DesktopBridgeWorker {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|error| format!("Failed to start desktop bridge worker: {error}"))?;
+            .map_err(|error| format_bridge_start_error(&node_binary, error))?;
 
         let stdin = child
             .stdin
@@ -191,12 +193,31 @@ impl Drop for DesktopBridgeWorkerInner {
     }
 }
 
-fn bridge_worker_path() -> Result<PathBuf, String> {
+fn bridge_worker_path(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(path) = env::var("SOURCE_COMPANION_DESKTOP_BRIDGE_WORKER") {
         let path = PathBuf::from(path);
         if path.is_file() {
             return Ok(path);
         }
+        return Err(format!(
+            "desktop-bridge-worker-missing: Desktop bridge worker override not found at {}.",
+            path.display()
+        ));
+    }
+
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .map(|resource_dir| {
+            resource_dir
+                .join("src")
+                .join("desktop-bridge-worker.js")
+        })
+        .map_err(|error| {
+            format!("desktop-bridge-worker-missing: Desktop bridge resource directory could not be resolved: {error}")
+        })?;
+    if resource_path.is_file() {
+        return Ok(resource_path);
     }
 
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -207,10 +228,21 @@ fn bridge_worker_path() -> Result<PathBuf, String> {
         Ok(path)
     } else {
         Err(format!(
-            "Desktop bridge worker not found at {}.",
+            "desktop-bridge-worker-missing: Desktop bridge worker not found in Tauri resources at {} or development source at {}.",
+            resource_path.display(),
             path.display()
         ))
     }
+}
+
+fn format_bridge_start_error(node_binary: &str, error: std::io::Error) -> String {
+    if error.kind() == ErrorKind::NotFound {
+        return format!(
+            "desktop-bridge-runtime-missing: Desktop bridge runtime '{node_binary}' was not found. Install Node.js, bundle the runtime, or set SOURCE_COMPANION_NODE_BINARY to a valid runtime path."
+        );
+    }
+
+    format!("desktop-bridge-start-failed: Failed to start desktop bridge worker: {error}")
 }
 
 fn normalize_request(request: Value) -> Value {
@@ -569,12 +601,12 @@ fn github_load_pull_request_review_context(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let desktop_bridge_state =
-        DesktopBridgeState::new().expect("error while starting Source Companion desktop bridge");
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(desktop_bridge_state)
+        .setup(|app| {
+            app.manage(DesktopBridgeState::new(app.handle()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             repository_pick_folder,
             repository_pick_clone_target_folder,

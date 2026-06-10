@@ -21,9 +21,13 @@ test("tauri shell packages only copied full-ui assets", () => {
     "icons/128x128@2x.png",
     "icons/icon.png"
   ]);
+  assert.deepEqual(config.bundle.resources, {
+    "../src": "src"
+  });
   for (const iconPath of config.bundle.icon) {
     assert.equal(fs.existsSync(path.join(projectRoot, "src-tauri", iconPath)), true);
   }
+  assert.equal(fs.existsSync(path.join(projectRoot, "src", "desktop-bridge-worker.js")), true);
   assert.match(config.app.security.csp, /script-src 'self'/);
   assert.doesNotMatch(config.app.security.csp, /unsafe-eval/);
 

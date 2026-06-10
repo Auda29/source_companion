@@ -10,6 +10,7 @@ const {
   FileSecureTokenMetadataStore,
   MemorySecureTokenStore,
   createDesktopSecureTokenStore,
+  createPlatformCredentialAdapter,
   createGitHubDeviceFlow,
   createGitHubBridgeClient,
   createGitHubApiClient
@@ -232,6 +233,31 @@ test("desktop secure token store keeps token in credential adapter and metadata 
   await store.delete();
   assert.equal(credentials.has("github.com:octo"), false);
   assert.equal(await store.read(), null);
+});
+
+test("macOS credential adapter writes token through security interactive mode", async () => {
+  const calls = [];
+  const adapter = createPlatformCredentialAdapter({
+    platform: "darwin",
+    runCommand: async (command, args, options = {}) => {
+      calls.push({ command, args, options });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  });
+
+  await adapter.write({
+    service: "Source Companion",
+    account: "github.com:octo",
+    login: "octo",
+    token: "secret-token"
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "security");
+  assert.deepEqual(calls[0].args, ["-i"]);
+  assert.equal(calls[0].args.includes("secret-token"), false);
+  assert.match(calls[0].options.stdin, /^add-generic-password /);
+  assert.match(calls[0].options.stdin, / -w "secret-token"\nquit\n$/);
 });
 
 test("renderer bridge client creates repositories without exposing tokens", async () => {

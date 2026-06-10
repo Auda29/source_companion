@@ -3702,7 +3702,7 @@
           <div class="commit-status error">Create an initial commit in the Commit box below, then run Publish to GitHub again.</div>
         ` : ""}
         ${status.needsGitInit ? `
-          <div class="commit-status ${status.status === "succeeded" ? "success" : "running"}">Git init for this folder has been explicitly selected and is waiting for the publish runner.</div>
+          <div class="commit-status ${status.needsCommit ? "error" : status.status === "succeeded" ? "success" : "running"}">${status.needsCommit ? "Git init is selected, but publishing stays blocked until an initial commit exists." : "Git init for this folder has been explicitly selected and is waiting for the publish runner."}</div>
         ` : ""}
         ${remotes.length > 0 ? `
           <div class="commit-status error">Existing remotes: ${escapeHtml(remotes.join(", "))}. Source Companion will not overwrite or replace remotes automatically.</div>

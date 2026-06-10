@@ -36,6 +36,8 @@ Prerequisites:
 - Git
 - Rust/Cargo and the Tauri prerequisites for desktop development
 
+The current desktop bridge starts the JavaScript worker with Node.js. If a desktop bundle starts without a usable Node runtime, the app shell remains open and source-control bridge commands return a `desktop-bridge-runtime-missing` error instead of aborting startup.
+
 Install dependencies:
 
 ```powershell
