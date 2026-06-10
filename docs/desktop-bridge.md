@@ -66,24 +66,26 @@ The persistent worker keeps the queue and watcher state alive for the desktop ru
 
 ## Packaging Decision
 
-The packaged desktop app will keep the existing JavaScript bridge worker and start it from Tauri-managed resources with a bundled Node runtime. This is the selected path over a generic Node sidecar command or a native Rust rewrite, because it preserves the reviewed bridge whitelist, the existing `GitOperationQueue`, watcher ownership, GitHub auth backend, and the Git CLI wrapper without reopening the product surface.
+The packaged desktop app keeps the existing JavaScript bridge worker and starts it from Tauri-managed resources with an explicitly resolved Node runtime. This is the selected path over a generic Node sidecar command or a native Rust rewrite, because it preserves the reviewed bridge whitelist, the existing `GitOperationQueue`, watcher ownership, GitHub auth backend, and the Git CLI wrapper without reopening the product surface.
+
+The current bundle does not include a Node binary in `tauri.conf.json`. Installed builds therefore need `SOURCE_COMPANION_NODE_BINARY` to point at a usable runtime or `node` to be available through the app process environment. If the runtime is unavailable, the app shell remains open and repository or GitHub bridge commands return `desktop-bridge-runtime-missing`.
 
 Runtime paths are separated as follows:
 
 - Development: `SOURCE_COMPANION_DESKTOP_BRIDGE_WORKER` and `SOURCE_COMPANION_NODE_BINARY` may point at the source-tree worker and a local Node binary. If unset, development may continue to use `src/desktop-bridge-worker.js` and `node` from `PATH`.
-- CI: Node tests and Rust checks may use the source-tree worker and CI-provided Node. Bundle-oriented checks must also verify the resource manifest so the worker and bundled runtime are included in Tauri builds.
-- Installed bundle: Tauri resolves the worker from packaged resources and can resolve the Node runtime through `SOURCE_COMPANION_NODE_BINARY` or the default `node` lookup until a runtime binary is added to packaged resources. The installed app must not depend on `CARGO_MANIFEST_DIR` or the local project source tree. If the runtime is unavailable, repository and GitHub bridge commands return `desktop-bridge-runtime-missing` while the app shell remains open.
+- CI: Node tests and Rust checks may use the source-tree worker and CI-provided Node. Bundle-oriented checks must also verify the resource manifest so the worker is included in Tauri builds and the missing-runtime path remains structured.
+- Installed bundle: Tauri resolves the worker from packaged resources and resolves the Node runtime through `SOURCE_COMPANION_NODE_BINARY` or the default `node` lookup. The installed app must not depend on `CARGO_MANIFEST_DIR` or the local project source tree. If the runtime is unavailable, repository and GitHub bridge commands return `desktop-bridge-runtime-missing` while the app shell remains open.
 
 Bridge startup errors follow the same structured-error approach as backend requests:
 
 - missing worker resource: `desktop-bridge-worker-missing`
-- missing bundled runtime: `desktop-bridge-runtime-missing`
+- missing Node runtime: `desktop-bridge-runtime-missing`
 - worker spawn or handshake failure: `desktop-bridge-start-failed`
 - worker exits after startup: `desktop-bridge-worker-stopped`
 
 These errors must be surfaced as desktop bridge failures, not as a new shell, filesystem, token, or GitHub API capability. The bridge remains limited to named source-control and GitHub-auth commands.
 
-Current bundle smoke coverage verifies the packaged worker resource, the preserved bridge whitelist, and the missing-runtime/missing-worker error path. A full installed-app start smoke with an embedded Node runtime remains platform-dependent until the runtime binary is added to the bundle.
+Current bundle smoke coverage verifies the packaged worker resource, the preserved bridge whitelist, and the missing-runtime/missing-worker error path. A full installed-app start smoke without a system Node dependency remains a separate follow-up if a Node binary is later added to the bundle.
 
 ## Native Dialogs
 

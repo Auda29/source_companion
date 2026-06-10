@@ -24,6 +24,7 @@ test("tauri shell packages only copied full-ui assets", () => {
   assert.deepEqual(config.bundle.resources, {
     "../src": "src"
   });
+  assert.equal(Object.values(config.bundle.resources).includes("node"), false);
   for (const iconPath of config.bundle.icon) {
     assert.equal(fs.existsSync(path.join(projectRoot, "src-tauri", iconPath)), true);
   }
@@ -35,6 +36,14 @@ test("tauri shell packages only copied full-ui assets", () => {
   const capability = JSON.parse(fs.readFileSync(capabilityPath, "utf8"));
   assert.deepEqual(capability.windows, ["main"]);
   assert.deepEqual(capability.permissions, ["core:default"]);
+});
+
+test("desktop bridge docs do not claim a bundled node runtime", () => {
+  const bridgeDoc = fs.readFileSync(path.join(projectRoot, "docs", "desktop-bridge.md"), "utf8");
+  assert.doesNotMatch(bridgeDoc, /bundled Node runtime/i);
+  assert.doesNotMatch(bridgeDoc, /missing bundled runtime/i);
+  assert.match(bridgeDoc, /does not include a Node binary/);
+  assert.match(bridgeDoc, /desktop-bridge-runtime-missing/);
 });
 
 test("desktop asset copy keeps the current html ui entry and src assets", () => {

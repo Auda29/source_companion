@@ -65,7 +65,7 @@ impl DesktopBridgeWorker {
             .and_then(|src| src.parent())
             .map(PathBuf::from);
 
-        let mut command = Command::new(node_binary);
+        let mut command = Command::new(&node_binary);
         command
             .arg("--preserve-symlinks")
             .arg("--preserve-symlinks-main")
@@ -238,7 +238,7 @@ fn bridge_worker_path(app: &AppHandle) -> Result<PathBuf, String> {
 fn format_bridge_start_error(node_binary: &str, error: std::io::Error) -> String {
     if error.kind() == ErrorKind::NotFound {
         return format!(
-            "desktop-bridge-runtime-missing: Desktop bridge runtime '{node_binary}' was not found. Install Node.js, bundle the runtime, or set SOURCE_COMPANION_NODE_BINARY to a valid runtime path."
+            "desktop-bridge-runtime-missing: Desktop bridge runtime '{node_binary}' was not found. Install Node.js or set SOURCE_COMPANION_NODE_BINARY to a valid runtime path."
         );
     }
 

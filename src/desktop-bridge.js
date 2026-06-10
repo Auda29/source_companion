@@ -46,9 +46,15 @@ function createTauriDesktopBridge({ invoke } = {}) {
 
   return Object.fromEntries(DESKTOP_BRIDGE_METHODS.map((method) => [
     method,
-    (request = {}) => invoke(DESKTOP_BRIDGE_COMMANDS[method], {
-      request: normalizeRequest(request)
-    })
+    async (request = {}) => {
+      try {
+        return await invoke(DESKTOP_BRIDGE_COMMANDS[method], {
+          request: normalizeRequest(request)
+        });
+      } catch (error) {
+        throw normalizeDesktopBridgeError(error);
+      }
+    }
   ]));
 }
 
@@ -58,7 +64,13 @@ function createDesktopBridgeFacade(bridge) {
   const facade = {};
   DESKTOP_BRIDGE_METHODS.forEach((method) => {
     if (typeof bridge[method] === "function") {
-      facade[method] = (request = {}) => bridge[method](normalizeRequest(request));
+      facade[method] = async (request = {}) => {
+        try {
+          return await bridge[method](normalizeRequest(request));
+        } catch (error) {
+          throw normalizeDesktopBridgeError(error);
+        }
+      };
     }
   });
 
@@ -398,6 +410,24 @@ function normalizeRequest(request) {
   return { ...request };
 }
 
+function normalizeDesktopBridgeError(error) {
+  if (error instanceof Error) return error;
+
+  const message = typeof error === "string"
+    ? error
+    : clean(error && error.message) || "Desktop bridge request failed.";
+  const normalized = new Error(message);
+  const kind = clean(error && error.kind) || bridgeErrorKindFromMessage(message);
+  if (kind) normalized.kind = kind;
+  if (error && typeof error === "object") normalized.detail = error;
+  return normalized;
+}
+
+function bridgeErrorKindFromMessage(message) {
+  const match = clean(message).match(/^([a-z0-9-]+):\s+/i);
+  return match ? match[1] : "";
+}
+
 function clean(value) {
   return String(value || "").trim();
 }
@@ -430,6 +460,7 @@ if (typeof module !== "undefined") {
     createDesktopBridgeBackend,
     createDesktopBridgeFacade,
     createTauriDesktopBridge,
+    normalizeDesktopBridgeError,
     resolveDesktopBridge
   };
 }

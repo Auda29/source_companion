@@ -10,6 +10,7 @@ const {
   DESKTOP_BRIDGE_COMMANDS,
   DESKTOP_BRIDGE_METHODS,
   createDesktopBridgeBackend,
+  createDesktopBridgeFacade,
   createTauriDesktopBridge
 } = require("../src/desktop-bridge");
 
@@ -112,6 +113,39 @@ test("tauri desktop bridge maps methods to explicit command names", async () => 
       }
     }
   }]);
+});
+
+test("tauri desktop bridge surfaces string invoke rejections as Error messages", async () => {
+  const bridge = createTauriDesktopBridge({
+    invoke: async () => {
+      throw "desktop-bridge-runtime-missing: Desktop bridge runtime 'node' was not found.";
+    }
+  });
+
+  await assert.rejects(
+    () => bridge.runPublishAction({ repositoryPath: "C:\\repo" }),
+    (error) => {
+      assert.equal(
+        error.message,
+        "desktop-bridge-runtime-missing: Desktop bridge runtime 'node' was not found."
+      );
+      assert.equal(error.kind, "desktop-bridge-runtime-missing");
+      return true;
+    }
+  );
+});
+
+test("desktop bridge facade surfaces string backend rejections as Error messages", async () => {
+  const bridge = createDesktopBridgeFacade({
+    runPublishAction: async () => {
+      throw "desktop-bridge-runtime-missing: Desktop bridge runtime 'node' was not found.";
+    }
+  });
+
+  await assert.rejects(
+    () => bridge.runPublishAction({ repositoryPath: "C:\\repo" }),
+    /desktop-bridge-runtime-missing: Desktop bridge runtime 'node' was not found\./
+  );
 });
 
 test("tauri native app registers every repository bridge command", () => {
