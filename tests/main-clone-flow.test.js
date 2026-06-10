@@ -180,7 +180,7 @@ test("late tauri global bridge enables github login in the desktop clone dialog"
     githubRepoList: new FakeElement()
   });
   const commands = [];
-  const tauri = {
+  const tauriInternals = {
     invoke: async (command, payload) => {
       commands.push({ command, payload });
       if (command === "github_get_auth_status") {
@@ -229,7 +229,7 @@ test("late tauri global bridge enables github login in the desktop clone dialog"
   assert.equal(context.window.SourceCompanionDesktopBridge, undefined);
   assert.match(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
 
-  context.window.__TAURI__ = tauri;
+  context.window.__TAURI_INTERNALS__ = tauriInternals;
 
   githubDialog.listeners.click({
     target: new FakeDatasetTarget({ githubAuthAction: "login" })

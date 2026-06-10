@@ -92,11 +92,16 @@ function resolveDesktopBridge(globalObject = defaultGlobalObject()) {
 
 function resolveTauriInvoke(globalObject = defaultGlobalObject()) {
   const tauri = globalObject && globalObject.__TAURI__;
-  if (!tauri || typeof tauri !== "object") return null;
+  const tauriInternals = globalObject && globalObject.__TAURI_INTERNALS__;
 
-  if (tauri.core && typeof tauri.core.invoke === "function") return tauri.core.invoke;
-  if (typeof tauri.invoke === "function") return tauri.invoke;
-  if (tauri.tauri && typeof tauri.tauri.invoke === "function") return tauri.tauri.invoke;
+  if (tauri && typeof tauri === "object") {
+    if (tauri.core && typeof tauri.core.invoke === "function") return tauri.core.invoke;
+    if (typeof tauri.invoke === "function") return tauri.invoke;
+    if (tauri.tauri && typeof tauri.tauri.invoke === "function") return tauri.tauri.invoke;
+  }
+  if (tauriInternals && typeof tauriInternals.invoke === "function") {
+    return tauriInternals.invoke;
+  }
   return null;
 }
 

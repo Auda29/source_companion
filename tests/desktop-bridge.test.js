@@ -141,7 +141,8 @@ test("desktop bridge resolves supported Tauri invoke globals", async () => {
   const variants = [
     ["core", (invoke) => ({ __TAURI__: { core: { invoke } } })],
     ["root", (invoke) => ({ __TAURI__: { invoke } })],
-    ["tauri", (invoke) => ({ __TAURI__: { tauri: { invoke } } })]
+    ["tauri", (invoke) => ({ __TAURI__: { tauri: { invoke } } })],
+    ["internals", (invoke) => ({ __TAURI_INTERNALS__: { invoke } })]
   ];
 
   for (const [label, createGlobal] of variants) {
