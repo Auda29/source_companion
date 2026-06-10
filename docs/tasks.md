@@ -590,12 +590,12 @@ Stand 2026-06-09: Der optionale Review-Follow-up aus `T54` zum lesbareren Publis
 
 ### T60 - Fehlgeschlagenen CI-Run nach T59 beheben
 
-- Status: `review`
+- Status: `done`
 - Prioritaet: `P1`
 - Abhaengigkeiten: `T59`
 - Definition of Done: Der letzte fehlgeschlagene GitHub-Actions-Run ist analysiert und die Ursachen sind behoben; `npm run ci:node` besteht lokal oder im naechsten CI-Run; `cargo fmt --check` fuer `src-tauri` besteht im CI; der naechste Push-/PR-CI-Run auf `main` ist gruen oder verbleibende externe Blocker sind konkret dokumentiert.
 - Implementierungsnotiz: CI-Run `27258539853` vom 2026-06-10 ist weiter fehlgeschlagen. Die vorherigen Blocker sind behoben: `Node tests and desktop assets` ist gruen, `cargo fmt --check` ist gruen, `desktop-dist` wird im Tauri-Rust-Job vor `cargo check` erzeugt, und die Icon-Dateien sind vorhanden. Der verbleibende Fehler liegt im Schritt `Check Tauri crate`: `cargo check` scheitert bei `tauri::generate_context!()` wegen `unknown field icon`, weil Tauri v2 das Feld `icon` im Window-Konfigurationsobjekt nicht akzeptiert. Das Window-Icon-Feld muss aus `app.windows[]` entfernt bleiben; Icons werden ueber `bundle.icon` abgesichert. Keine CI-Abschwaechung vornehmen; der Rust-Check soll die echte Tauri-Konfiguration inklusive Bundle-Icons pruefen.
 - Notiz: 2026-06-10 09:06 CEST umgesetzt: `src-tauri/icons/` enthaelt jetzt die von Tauri erwarteten PNG-Icon-Dateien, und `src-tauri/tauri.conf.json` referenziert das Window-Icon sowie die Bundle-Icon-Liste explizit. `tests/desktop-shell.test.js` prueft die Icon-Konfiguration und vorhandene Dateien. `npm run ci:node` und `git diff --check` bestanden lokal; `cargo fmt --check`/`cargo check` konnten lokal nicht ausgefuehrt werden, weil `cargo`/`rustfmt` in dieser Umgebung nicht installiert sind. Der naechste GitHub-Actions-Run muss `Tauri Rust check` remote bestaetigen.
 - Notiz: 2026-06-10 09:18 CEST umgesetzt: `src-tauri/tauri.conf.json` entfernt das Tauri-v2-ungueltige `icon`-Feld aus `app.windows[0]`; die Bundle-Icon-Liste bleibt unter `bundle.icon` erhalten. `tests/desktop-shell.test.js` prueft jetzt explizit, dass das Window-Objekt kein `icon`-Feld enthaelt, und dass alle Bundle-Icons vorhanden sind. `npm run ci:node` bestand lokal mit 116/116 Tests; `git diff --check` bestand. `cargo fmt --check`/`cargo check` konnten lokal nicht ausgefuehrt werden, weil `cargo`/`rustfmt` in dieser Umgebung nicht installiert sind.
-- Review-Ergebnis: Wartet auf Remote-CI. Lokale Node-CI und Whitespace-Pruefung sind gruen; der naechste GitHub-Actions-Run muss bestaetigen, dass `Tauri Rust check` nach Entfernen des ungueltigen Window-Icon-Felds komplett gruen ist.
-- Offene Review-Punkte: Aenderungen pushen oder vom Cron pushen lassen; danach den naechsten GitHub-Actions-Run pruefen.
+- Review-Ergebnis: Bestanden am 2026-06-10 09:12 CEST. GitHub-Actions-Run `27259460202` fuer Commit `9181843 Fix Tauri v2 icon config for CI` ist gruen; `Node tests and desktop assets`, `cargo fmt --check`, Desktop-Asset-Erzeugung und `cargo check` im `Tauri Rust check` bestanden.
+- Offene Review-Punkte: -
