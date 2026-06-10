@@ -19,7 +19,8 @@ test("tauri shell packages only copied full-ui assets", () => {
     "icons/32x32.png",
     "icons/128x128.png",
     "icons/128x128@2x.png",
-    "icons/icon.png"
+    "icons/icon.png",
+    "icons/icon.ico"
   ]);
   assert.deepEqual(config.bundle.resources, {
     "../src": "src"
@@ -28,6 +29,8 @@ test("tauri shell packages only copied full-ui assets", () => {
   for (const iconPath of config.bundle.icon) {
     assert.equal(fs.existsSync(path.join(projectRoot, "src-tauri", iconPath)), true);
   }
+  const windowsIcon = readWindowsIcon(path.join(projectRoot, "src-tauri", "icons", "icon.ico"));
+  assert.deepEqual(windowsIcon.sizes, ["32x32", "128x128", "256x256"]);
   assert.equal(fs.existsSync(path.join(projectRoot, "src", "desktop-bridge-worker.js")), true);
   assert.match(config.app.security.csp, /script-src 'self'/);
   assert.doesNotMatch(config.app.security.csp, /unsafe-eval/);
@@ -37,6 +40,25 @@ test("tauri shell packages only copied full-ui assets", () => {
   assert.deepEqual(capability.windows, ["main"]);
   assert.deepEqual(capability.permissions, ["core:default"]);
 });
+
+function readWindowsIcon(iconPath) {
+  const icon = fs.readFileSync(iconPath);
+  assert.equal(icon.readUInt16LE(0), 0);
+  assert.equal(icon.readUInt16LE(2), 1);
+  const count = icon.readUInt16LE(4);
+  const sizes = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = 6 + index * 16;
+    const width = icon.readUInt8(offset) || 256;
+    const height = icon.readUInt8(offset + 1) || 256;
+    const bytes = icon.readUInt32LE(offset + 8);
+    const imageOffset = icon.readUInt32LE(offset + 12);
+    assert.equal(icon.slice(imageOffset, imageOffset + 8).toString("hex"), "89504e470d0a1a0a");
+    assert.ok(bytes > 0);
+    sizes.push(`${width}x${height}`);
+  }
+  return { count, sizes };
+}
 
 test("desktop bridge docs do not claim a bundled node runtime", () => {
   const bridgeDoc = fs.readFileSync(path.join(projectRoot, "docs", "desktop-bridge.md"), "utf8");
