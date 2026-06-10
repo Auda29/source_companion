@@ -3335,7 +3335,7 @@
       return bridge;
     }
 
-    const tauriInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+    const tauriInvoke = resolveTauriInvoke(window);
     if (typeof tauriInvoke !== "function") return null;
 
     return {
@@ -3346,14 +3346,24 @@
       cancelDeviceLogin: (options) => tauriInvoke("github_device_login_cancel", { request: options || {} }),
       login: (options) => tauriInvoke("github_login", { request: options || {} }),
       logout: (options) => tauriInvoke("github_logout", { request: options || {} }),
-      listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", options || {}),
-      searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", options || {}),
-      createRepository: (options) => tauriInvoke("github_create_repository", options || {}),
-      listPullRequests: (options) => tauriInvoke("github_list_pull_requests", options || {}),
-      createPullRequest: (options) => tauriInvoke("github_create_pull_request", options || {}),
-      loadPullRequestChecks: (options) => tauriInvoke("github_load_pull_request_checks", options || {}),
-      loadPullRequestReviewContext: (options) => tauriInvoke("github_load_pull_request_review_context", options || {})
+      listUserRepositories: (options) => tauriInvoke("github_list_user_repositories", { request: options || {} }),
+      searchUserRepositories: (options) => tauriInvoke("github_search_user_repositories", { request: options || {} }),
+      createRepository: (options) => tauriInvoke("github_create_repository", { request: options || {} }),
+      listPullRequests: (options) => tauriInvoke("github_list_pull_requests", { request: options || {} }),
+      createPullRequest: (options) => tauriInvoke("github_create_pull_request", { request: options || {} }),
+      loadPullRequestChecks: (options) => tauriInvoke("github_load_pull_request_checks", { request: options || {} }),
+      loadPullRequestReviewContext: (options) => tauriInvoke("github_load_pull_request_review_context", { request: options || {} })
     };
+  }
+
+  function resolveTauriInvoke(globalObject) {
+    const tauri = globalObject && globalObject.__TAURI__;
+    if (!tauri || typeof tauri !== "object") return null;
+
+    if (tauri.core && typeof tauri.core.invoke === "function") return tauri.core.invoke;
+    if (typeof tauri.invoke === "function") return tauri.invoke;
+    if (tauri.tauri && typeof tauri.tauri.invoke === "function") return tauri.tauri.invoke;
+    return null;
   }
 
   function createId() {

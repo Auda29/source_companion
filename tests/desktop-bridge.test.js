@@ -11,7 +11,9 @@ const {
   DESKTOP_BRIDGE_METHODS,
   createDesktopBridgeBackend,
   createDesktopBridgeFacade,
-  createTauriDesktopBridge
+  createTauriDesktopBridge,
+  resolveDesktopBridge,
+  resolveTauriInvoke
 } = require("../src/desktop-bridge");
 
 const projectRoot = path.join(__dirname, "..");
@@ -133,6 +135,35 @@ test("tauri desktop bridge surfaces string invoke rejections as Error messages",
       return true;
     }
   );
+});
+
+test("desktop bridge resolves supported Tauri invoke globals", async () => {
+  const variants = [
+    ["core", (invoke) => ({ __TAURI__: { core: { invoke } } })],
+    ["root", (invoke) => ({ __TAURI__: { invoke } })],
+    ["tauri", (invoke) => ({ __TAURI__: { tauri: { invoke } } })]
+  ];
+
+  for (const [label, createGlobal] of variants) {
+    const calls = [];
+    const invoke = async (command, payload) => {
+      calls.push({ command, payload });
+      return { authenticated: false, source: label };
+    };
+    const globalObject = createGlobal(invoke);
+    const bridge = resolveDesktopBridge(globalObject);
+
+    assert.equal(resolveTauriInvoke(globalObject), invoke);
+    assert.equal(typeof bridge.getGitHubAuthStatus, "function");
+    assert.deepEqual(await bridge.getGitHubAuthStatus(), {
+      authenticated: false,
+      source: label
+    });
+    assert.deepEqual(calls, [{
+      command: "github_get_auth_status",
+      payload: { request: {} }
+    }]);
+  }
 });
 
 test("desktop bridge facade surfaces string backend rejections as Error messages", async () => {

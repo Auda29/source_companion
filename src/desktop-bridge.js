@@ -84,12 +84,20 @@ function resolveDesktopBridge(globalObject = defaultGlobalObject()) {
     globalObject.SourceCompanionRepositoryBridge;
   if (explicit) return createDesktopBridgeFacade(explicit);
 
-  const invoke = globalObject.__TAURI__ &&
-    globalObject.__TAURI__.core &&
-    globalObject.__TAURI__.core.invoke;
+  const invoke = resolveTauriInvoke(globalObject);
   if (typeof invoke !== "function") return null;
 
   return createDesktopBridgeFacade(createTauriDesktopBridge({ invoke }));
+}
+
+function resolveTauriInvoke(globalObject = defaultGlobalObject()) {
+  const tauri = globalObject && globalObject.__TAURI__;
+  if (!tauri || typeof tauri !== "object") return null;
+
+  if (tauri.core && typeof tauri.core.invoke === "function") return tauri.core.invoke;
+  if (typeof tauri.invoke === "function") return tauri.invoke;
+  if (tauri.tauri && typeof tauri.tauri.invoke === "function") return tauri.tauri.invoke;
+  return null;
 }
 
 function createDesktopBridgeBackend({
@@ -444,6 +452,7 @@ if (typeof window !== "undefined") {
     DESKTOP_BRIDGE_METHODS,
     createDesktopBridgeFacade,
     createTauriDesktopBridge,
+    resolveTauriInvoke,
     resolveDesktopBridge
   };
 
@@ -461,6 +470,7 @@ if (typeof module !== "undefined") {
     createDesktopBridgeFacade,
     createTauriDesktopBridge,
     normalizeDesktopBridgeError,
+    resolveTauriInvoke,
     resolveDesktopBridge
   };
 }

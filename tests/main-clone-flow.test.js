@@ -181,28 +181,26 @@ test("late tauri global bridge enables github login in the desktop clone dialog"
   });
   const commands = [];
   const tauri = {
-    core: {
-      invoke: async (command, payload) => {
-        commands.push({ command, payload });
-        if (command === "github_get_auth_status") {
-          return {
-            authenticated: false,
-            user: null,
-            error: null
-          };
-        }
-        if (command === "github_login") {
-          return {
-            authenticated: false,
-            user: null,
-            error: {
-              kind: "github-login-unavailable",
-              message: "GitHub OAuth client ID is not configured for desktop login."
-            }
-          };
-        }
-        throw new Error(`Unexpected command: ${command}`);
+    invoke: async (command, payload) => {
+      commands.push({ command, payload });
+      if (command === "github_get_auth_status") {
+        return {
+          authenticated: false,
+          user: null,
+          error: null
+        };
       }
+      if (command === "github_login") {
+        return {
+          authenticated: false,
+          user: null,
+          error: {
+            kind: "github-login-unavailable",
+            message: "GitHub OAuth client ID is not configured for desktop login."
+          }
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
     }
   };
 
