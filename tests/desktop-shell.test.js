@@ -14,7 +14,7 @@ test("tauri shell packages only copied full-ui assets", () => {
   assert.equal(config.build.frontendDist, "../desktop-dist");
   assert.equal(config.app.windows.length, 1);
   assert.equal(config.app.windows[0].label, "main");
-  assert.equal(config.app.windows[0].icon, "icons/icon.png");
+  assert.equal(Object.hasOwn(config.app.windows[0], "icon"), false);
   assert.deepEqual(config.bundle.icon, [
     "icons/32x32.png",
     "icons/128x128.png",
