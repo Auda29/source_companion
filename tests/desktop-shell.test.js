@@ -12,6 +12,7 @@ test("tauri shell packages only copied full-ui assets", () => {
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 
   assert.equal(config.build.frontendDist, "../desktop-dist");
+  assert.equal(config.app.withGlobalTauri, true);
   assert.equal(config.app.windows.length, 1);
   assert.equal(config.app.windows[0].label, "main");
   assert.equal(Object.hasOwn(config.app.windows[0], "icon"), false);

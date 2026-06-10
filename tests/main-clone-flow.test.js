@@ -162,6 +162,89 @@ test("desktop folder picker fills clone target field", async () => {
   assert.equal(cloneForm.getInput("target").value, "C:\\code\\picked-repo");
 });
 
+test("tauri global bridge enables github login in the desktop clone dialog", async () => {
+  const desktopBridgeScript = fs.readFileSync(path.join(__dirname, "..", "src", "desktop-bridge.js"), "utf8");
+  const githubClientScript = fs.readFileSync(path.join(__dirname, "..", "src", "github-api-client.js"), "utf8");
+  const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const githubForm = new FakeForm("github", {
+    name: "",
+    target: ""
+  });
+  const loginButton = new FakeElement();
+  loginButton.dataset = { githubAuthAction: "login" };
+  const githubDialog = new FakeDialog([loginButton]);
+  const githubAuthStatus = new FakeElement();
+  const document = new FakeDocument([githubForm], {
+    githubDialog,
+    githubAuthStatus,
+    githubRepoList: new FakeElement()
+  });
+  const commands = [];
+
+  const context = {
+    document,
+    localStorage: new FakeStorage(),
+    FormData: FakeFormData,
+    crypto: { randomUUID: () => "repo-1" },
+    Date,
+    Error,
+    String,
+    Array,
+    Boolean,
+    Number,
+    RegExp,
+    window: {
+      confirm: () => true,
+      __TAURI__: {
+        core: {
+          invoke: async (command, payload) => {
+            commands.push({ command, payload });
+            if (command === "github_get_auth_status") {
+              return {
+                authenticated: false,
+                user: null,
+                error: null
+              };
+            }
+            if (command === "github_login") {
+              return {
+                authenticated: false,
+                user: null,
+                error: {
+                  kind: "github-login-unavailable",
+                  message: "GitHub OAuth client ID is not configured for desktop login."
+                }
+              };
+            }
+            throw new Error(`Unexpected command: ${command}`);
+          }
+        }
+      }
+    }
+  };
+
+  vm.runInNewContext(desktopBridgeScript, context, { filename: "src/desktop-bridge.js" });
+  vm.runInNewContext(githubClientScript, context, { filename: "src/github-api-client.js" });
+  vm.runInNewContext(mainScript, context, { filename: "src/main.js" });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(typeof context.window.SourceCompanionDesktopBridge.loginGitHub, "function");
+  assert.match(githubAuthStatus.innerHTML, /Not logged in/);
+  assert.doesNotMatch(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
+
+  githubDialog.listeners.click({
+    target: new FakeDatasetTarget({ githubAuthAction: "login" })
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(commands.map((call) => call.command), [
+    "github_get_auth_status",
+    "github_login"
+  ]);
+  assert.match(githubAuthStatus.innerHTML, /GitHub OAuth client ID is not configured for desktop login/);
+  assert.doesNotMatch(githubAuthStatus.innerHTML, /GitHub login is not available in this runtime/);
+});
+
 test("publish dialog prepares preflight without starting publish", async () => {
   const mainScript = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   const publishForm = new FakeForm("publish", {
@@ -1324,9 +1407,25 @@ class FakeDatasetTarget {
   }
 
   closest(selector) {
+    if (selector === "[data-github-auth-action]" && this.dataset.githubAuthAction) return this;
+    if (selector === "[data-github-repo-search]" && Object.prototype.hasOwnProperty.call(this.dataset, "githubRepoSearch")) return this;
     if (selector === "[data-github-repo-name]") return this;
     return null;
   }
+}
+
+class FakeDialog extends FakeElement {
+  constructor(authButtons = []) {
+    super();
+    this.authButtons = authButtons;
+  }
+
+  querySelectorAll(selector) {
+    if (selector === "[data-github-auth-action]") return this.authButtons;
+    return [];
+  }
+
+  showModal() {}
 }
 
 class FakeForm extends FakeElement {
