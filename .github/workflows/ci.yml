@@ -48,6 +48,14 @@ jobs:
         run: cargo fmt --check
         working-directory: src-tauri
 
+      - name: Set up Node for desktop assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build desktop assets for Tauri config
+        run: npm run desktop:assets
+
       - name: Check Tauri crate
         run: cargo check
         working-directory: src-tauri
